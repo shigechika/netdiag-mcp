@@ -7,6 +7,9 @@ passes — validate.py's job is bounding *size*, not escaping.
 
 from __future__ import annotations
 
+import ipaddress
+import platform
+import re
 import shutil
 import socket
 import ssl
@@ -100,10 +103,45 @@ def dnssec_check(hostname: str, resolver: str = "1.1.1.1", transport: str = "pla
     return f"{verdict}\n\n{out}"
 
 
+def _is_ipv6_literal(target: str) -> bool:
+    try:
+        return ipaddress.ip_address(target).version == 6
+    except ValueError:
+        return False  # hostname — let ping's own resolver pick a family
+
+
 def ping_host(host: str, count: int = 4) -> str:
+    """ping with an explicit overall deadline where the binary supports one.
+
+    Without a deadline, an unreachable target makes `ping` wait its own
+    per-packet default for every probe (observed ~12s for count=2 against a
+    black-holed address), which can exceed SUBPROCESS_TIMEOUT and get
+    hard-killed into a generic "timed out" ToolError instead of ping's own
+    clean 100%-loss report. iputils (Linux, the deploy target) takes an
+    overall deadline via `-w`; BSD/macOS `ping` takes one via `-t`.
+
+    On Linux a single `ping` binary handles both families. BSD/macOS's
+    `ping` is IPv4-only and rejects an IPv6 literal outright ("cannot
+    resolve ...: Unknown host") — this dispatches to `ping6` there instead,
+    which has no overall-deadline flag at all (its `-t` means something
+    unrelated: an ICMPv6 Node Information query type), so an unreachable
+    IPv6 target on macOS falls back to the SUBPROCESS_TIMEOUT backstop and
+    a generic timeout error rather than a clean loss report — a narrow gap
+    limited to local macOS testing, since Linux never takes this branch.
+    An IPv6-only *hostname* on macOS still isn't handled (that would need a
+    pre-resolve this tool deliberately doesn't do), but a bare IPv6 literal
+    now works on both platforms.
+    """
     target = validate_target(host)
     n = clamp(count, 1, 10)
-    return _run("ping", ["-c", str(n), target])
+    deadline = clamp(n * 2, 4, 10)
+    is_linux = platform.system() == "Linux"
+    binary = "ping" if is_linux or not _is_ipv6_literal(target) else "ping6"
+    args = ["-c", str(n)]
+    if binary != "ping6":
+        args += ["-w" if is_linux else "-t", str(deadline)]
+    args.append(target)
+    return _run(binary, args)
 
 
 def traceroute_path(host: str, cycles: int = 3) -> str:
@@ -116,6 +154,37 @@ def traceroute_path(host: str, cycles: int = 3) -> str:
 def whois_lookup(domain: str) -> str:
     target = validate_target(domain)
     return _run("whois", [target])
+
+
+_ASN_RE = re.compile(r"^(?:AS)?(\d{1,10})$", re.IGNORECASE)
+
+
+def asn_lookup(target: str) -> str:
+    """ASN + country-code lookup for an IP, or org info for an AS number, via
+    Team Cymru's whois service (whois.cymru.com) — no API key or GeoIP
+    database needed, reuses the `whois` binary already required by
+    whois_lookup. Accepts an IP literal or an AS number (`AS15169` or
+    `15169`), not a hostname — Cymru's service does prefix/ASN lookups, not
+    DNS resolution, so resolve a hostname with dns_lookup first.
+    """
+    stripped = target.strip()
+    m = _ASN_RE.match(stripped)
+    if m:
+        query = f"AS{m.group(1)}"
+    else:
+        try:
+            ipaddress.ip_address(stripped)
+        except ValueError as e:
+            raise ToolError(
+                f"asn_lookup takes an IP address or AS number (e.g. AS15169 or 15169), "
+                f"not a hostname: {target!r}. Resolve it first with dns_lookup."
+            ) from e
+        query = validate_target(stripped)
+    # The leading space before "-v" is a documented whois.cymru.com quirk:
+    # their server parses flags out of the raw query string itself (the
+    # standard whois protocol has no argv-style options), and drops the
+    # -v verbose header line without it.
+    return _run("whois", ["-h", "whois.cymru.com", f" -v {query}"])
 
 
 def tcp_port_check(host: str, port: int, timeout: float = DEFAULT_TIMEOUT) -> str:

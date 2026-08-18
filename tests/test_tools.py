@@ -109,6 +109,47 @@ def test_ping_host_clamps_count(monkeypatch):
     assert captured["args"][1] == "10"  # clamped to the max
 
 
+def test_ping_host_sets_an_overall_deadline(monkeypatch):
+    """Regression guard: without a deadline flag an unreachable target makes
+    ping wait its own per-packet default for every probe (observed ~12s for
+    count=2 against a black-holed address), which can exceed
+    SUBPROCESS_TIMEOUT and turn a clean 100%-loss report into a hard-killed
+    generic timeout error instead."""
+    captured = {}
+    monkeypatch.setattr(tools, "_run", lambda binary, args: captured.setdefault("args", args) or "ok")
+    tools.ping_host("example.com", count=4)
+    assert "-w" in captured["args"] or "-t" in captured["args"]
+
+
+def test_ping_host_uses_ping6_for_ipv6_literal_on_macos(monkeypatch):
+    """Regression guard: BSD/macOS `ping` is IPv4-only and rejects an IPv6
+    literal outright ("cannot resolve ...: Unknown host") — a bare IPv6
+    literal must dispatch to `ping6` there. Linux's iputils `ping` handles
+    both, so this only applies off-Linux."""
+    captured = {}
+    monkeypatch.setattr(tools.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(tools, "_run", lambda binary, args: captured.setdefault("binary", binary) or "ok")
+    tools.ping_host("2001:db8::1")
+    assert captured["binary"] == "ping6"
+
+
+def test_ping_host_uses_ping_for_ipv4_on_macos(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(tools.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(tools, "_run", lambda binary, args: captured.setdefault("binary", binary) or "ok")
+    tools.ping_host("192.0.2.1")
+    assert captured["binary"] == "ping"
+
+
+def test_ping_host_uses_ping_for_ipv6_on_linux(monkeypatch):
+    """Linux's iputils ping is dual-stack — no ping6 dispatch needed there."""
+    captured = {}
+    monkeypatch.setattr(tools.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(tools, "_run", lambda binary, args: captured.setdefault("binary", binary) or "ok")
+    tools.ping_host("2001:db8::1")
+    assert captured["binary"] == "ping"
+
+
 def test_tcp_port_check_open_port():
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind(("127.0.0.1", 0))
@@ -168,3 +209,23 @@ def test_tls_cert_check_raises_on_connection_failure():
     # Port 1 is a reserved system port with nothing listening in CI/dev.
     with pytest.raises(ToolError):
         tools.tls_cert_check("127.0.0.1", 1)
+
+
+@pytest.mark.parametrize("value", ["AS15169", "as15169", "15169"])
+def test_asn_lookup_normalizes_as_number(monkeypatch, value):
+    captured = {}
+    monkeypatch.setattr(tools, "_run", lambda binary, args: captured.setdefault("args", args) or "ok")
+    tools.asn_lookup(value)
+    assert captured["args"] == ["-h", "whois.cymru.com", " -v AS15169"]
+
+
+def test_asn_lookup_passes_through_ip(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(tools, "_run", lambda binary, args: captured.setdefault("args", args) or "ok")
+    tools.asn_lookup("8.8.8.8")
+    assert captured["args"] == ["-h", "whois.cymru.com", " -v 8.8.8.8"]
+
+
+def test_asn_lookup_rejects_hostname():
+    with pytest.raises(ToolError, match="not a hostname"):
+        tools.asn_lookup("example.com")

@@ -20,6 +20,7 @@ Built for triaging "can't reach X" / "is DNS propagated yet" reports without she
 | `http_check` | HEAD/GET a URL and report status, redirect chain, and latency |
 | `tls_cert_check` | Fetch the certificate a host presents and report subject/issuer/validity/SANs |
 | `whois_lookup` | WHOIS lookup for a domain |
+| `asn_lookup` | ASN + country-code lookup for an IP, or org info for an AS number, via Team Cymru's whois service — no API key or GeoIP database needed |
 | `health_check` | Version and which wrapped binaries (`dig`/`ping`/`mtr`/`whois`) are present on PATH |
 
 All tools are read-only and single-target (no batch/sweep mode) — this is a
@@ -39,6 +40,13 @@ missing without failing the whole server).
 BIND 9.18+ — an older `dig` rejects the flag outright rather than silently
 falling back to plain DNS, so a stale binary fails loudly instead of giving
 a false sense of having checked over an encrypted transport.
+
+`tls_cert_check`/`http_check` against a bare IP address can fail TLS
+handshake with a "handshake failure" or similar error on SNI-hosted /
+CDN-fronted origins (e.g. behind Cloudflare) — TLS's SNI extension only
+carries hostnames, so an IP literal can't route to the right certificate on
+a shared edge. This is normal TLS behavior, not a tool bug; check by
+hostname when the target is CDN-fronted.
 
 ## Setup
 

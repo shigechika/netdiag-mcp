@@ -42,3 +42,16 @@ def test_ping_host_wraps_tool_error(monkeypatch):
 def test_tcp_port_check_rejects_bad_port():
     out = server.tcp_port_check("example.com", 99999)
     assert out.startswith("error:")
+
+
+def test_asn_lookup_wraps_tool_error(monkeypatch):
+    def raise_tool_error(*a, **k):
+        raise server.ToolError("not a hostname")
+
+    monkeypatch.setattr(server.tools, "asn_lookup", raise_tool_error)
+    assert server.asn_lookup("example.com") == "error: not a hostname"
+
+
+def test_asn_lookup_delegates_to_tools(monkeypatch):
+    monkeypatch.setattr(server.tools, "asn_lookup", lambda t: f"asn-result for {t}")
+    assert server.asn_lookup("8.8.8.8") == "asn-result for 8.8.8.8"

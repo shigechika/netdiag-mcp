@@ -117,3 +117,17 @@ def whois_lookup(domain: str) -> str:
         return tools.whois_lookup(domain)
     except (ValueError, ToolError) as e:
         return f"error: {e}"
+
+
+@mcp.tool()
+def asn_lookup(target: str) -> str:
+    """ASN + country-code lookup for an IP, or org info for an AS number (e.g. AS15169 or 15169).
+
+    Via Team Cymru's whois service — no API key or GeoIP database needed.
+    Takes an IP literal or AS number, not a hostname; resolve first with
+    dns_lookup if you only have a name.
+    """
+    try:
+        return tools.asn_lookup(target)
+    except (ValueError, ToolError) as e:
+        return f"error: {e}"
