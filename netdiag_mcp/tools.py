@@ -22,6 +22,13 @@ SUBPROCESS_TIMEOUT = 15.0
 
 DNS_RECORD_TYPES = {"A", "AAAA", "MX", "TXT", "NS", "CNAME", "SOA", "PTR", "CAA"}
 
+# dig flag for each transport. "plain" adds nothing (classic UDP/TCP port 53).
+# +tls/+https require dig from BIND 9.18+; an older dig rejects the flag
+# outright ("Invalid option", exit 1) rather than silently falling back to
+# plain DNS, so a stale `dig` fails loudly here instead of giving a false
+# sense of having checked over an encrypted transport.
+_DNS_TRANSPORT_FLAGS = {"plain": None, "dot": "+tls", "doh": "+https"}
+
 
 class ToolError(Exception):
     """A tool could not run at all (missing binary, timeout, bad input)."""
@@ -46,29 +53,48 @@ def _run(binary: str, args: list[str]) -> str:
     return out if not err else f"{out}\n[stderr] {err}" if out else err
 
 
-def dns_lookup(hostname: str, record_type: str = "A", resolver: str | None = None) -> str:
+def _transport_flag(transport: str) -> str | None:
+    key = transport.strip().lower()
+    if key not in _DNS_TRANSPORT_FLAGS:
+        raise ToolError(f"unsupported transport {transport!r}; use one of {sorted(_DNS_TRANSPORT_FLAGS)}")
+    return _DNS_TRANSPORT_FLAGS[key]
+
+
+def dns_lookup(hostname: str, record_type: str = "A", resolver: str | None = None, transport: str = "plain") -> str:
+    """transport: "plain" (UDP/TCP 53, default), "dot" (DNS-over-TLS, 853) or "doh" (DNS-over-HTTPS, 443)."""
     target = validate_target(hostname)
     rtype = record_type.strip().upper()
     if rtype not in DNS_RECORD_TYPES:
         raise ToolError(f"unsupported record type {record_type!r}; use one of {sorted(DNS_RECORD_TYPES)}")
+    flag = _transport_flag(transport)
     args = []
     if resolver:
         args.append(f"@{validate_target(resolver)}")
+    if flag:
+        args.append(flag)
     args += [target, rtype, "+noall", "+answer", "+stats"]
     return _run("dig", args)
 
 
-def dnssec_check(hostname: str, resolver: str = "1.1.1.1") -> str:
+def dnssec_check(hostname: str, resolver: str = "1.1.1.1", transport: str = "plain") -> str:
     """Query a validating resolver and report whether the AD (Authenticated Data) bit is set.
 
     A bare `dig` reply with an RRSIG present does NOT mean DNSSEC validated
     — only a resolver that itself validates and sets the AD flag proves
     that. This deliberately targets a known-validating public resolver
     rather than trusting whatever the host's default resolver is.
+
+    transport lets you compare validation over plain DNS vs. DoT/DoH — useful
+    when a network intercepts/spoofs port 53 but leaves 443/853 alone.
     """
     target = validate_target(hostname)
     res = validate_target(resolver)
-    out = _run("dig", [f"@{res}", target, "+dnssec", "+noall", "+comment", "+answer"])
+    flag = _transport_flag(transport)
+    args = [f"@{res}"]
+    if flag:
+        args.append(flag)
+    args += [target, "+dnssec", "+noall", "+comment", "+answer"]
+    out = _run("dig", args)
     ad_set = "flags:" in out and " ad" in out.split("flags:", 1)[1].split(";", 1)[0]
     verdict = "DNSSEC validated (AD bit set)" if ad_set else "DNSSEC NOT validated (AD bit absent)"
     return f"{verdict}\n\n{out}"

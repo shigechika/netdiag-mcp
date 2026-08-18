@@ -37,23 +37,30 @@ def health_check() -> dict:
 
 
 @mcp.tool()
-def dns_lookup(hostname: str, record_type: str = "A", resolver: str | None = None) -> str:
+def dns_lookup(hostname: str, record_type: str = "A", resolver: str | None = None, transport: str = "plain") -> str:
     """Resolve a DNS record via `dig`. record_type: A/AAAA/MX/TXT/NS/CNAME/SOA/PTR/CAA.
 
     Pass resolver to query a specific nameserver instead of the host default
     (e.g. to check whether a change has propagated to a given resolver).
+    transport: "plain" (UDP/TCP 53, default), "dot" (DNS-over-TLS, 853) or
+    "doh" (DNS-over-HTTPS, 443). Requires dig from BIND 9.18+; an older dig
+    rejects dot/doh outright instead of silently querying over plain DNS.
     """
     try:
-        return tools.dns_lookup(hostname, record_type, resolver)
+        return tools.dns_lookup(hostname, record_type, resolver, transport)
     except (ValueError, ToolError) as e:
         return f"error: {e}"
 
 
 @mcp.tool()
-def dnssec_check(hostname: str, resolver: str = "1.1.1.1") -> str:
-    """Check whether a name validates DNSSEC against a known-validating resolver (AD bit)."""
+def dnssec_check(hostname: str, resolver: str = "1.1.1.1", transport: str = "plain") -> str:
+    """Check whether a name validates DNSSEC against a known-validating resolver (AD bit).
+
+    transport: "plain" (default), "dot" or "doh" — compare validation over
+    plain DNS vs. an encrypted transport when port 53 may be intercepted.
+    """
     try:
-        return tools.dnssec_check(hostname, resolver)
+        return tools.dnssec_check(hostname, resolver, transport)
     except (ValueError, ToolError) as e:
         return f"error: {e}"
 

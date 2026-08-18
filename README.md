@@ -12,8 +12,8 @@ Built for triaging "can't reach X" / "is DNS propagated yet" reports without she
 
 | Tool | Purpose |
 |---|---|
-| `dns_lookup` | Resolve a DNS record via `dig` (A/AAAA/MX/TXT/NS/CNAME/SOA/PTR/CAA), optionally against a specific resolver |
-| `dnssec_check` | Query a known-validating resolver and report whether the AD bit is set — the only reliable way to confirm DNSSEC validation, since an RRSIG being present in a plain `dig` reply does not by itself prove anything validated it |
+| `dns_lookup` | Resolve a DNS record via `dig` (A/AAAA/MX/TXT/NS/CNAME/SOA/PTR/CAA), optionally against a specific resolver and over plain DNS/DoT/DoH |
+| `dnssec_check` | Query a known-validating resolver and report whether the AD bit is set (plain/DoT/DoH) — the only reliable way to confirm DNSSEC validation, since an RRSIG being present in a plain `dig` reply does not by itself prove anything validated it |
 | `ping_host` | ICMP ping (count clamped to 1-10) |
 | `traceroute_path` | Hop-by-hop path/loss report via `mtr --report` (fixed cycles, not a live/continuous run) |
 | `tcp_port_check` | Is a TCP port open — a plain socket connect, not a port scan |
@@ -34,6 +34,12 @@ those three tools work even on a host with only the `dig`/`ping`/`mtr`/`whois`
 binaries installed (or none of them — `health_check` reports which are
 missing without failing the whole server).
 
+`dns_lookup`/`dnssec_check` support DNS-over-TLS and DNS-over-HTTPS via
+`transport="dot"`/`"doh"` (dig's `+tls`/`+https`). This needs `dig` from
+BIND 9.18+ — an older `dig` rejects the flag outright rather than silently
+falling back to plain DNS, so a stale binary fails loudly instead of giving
+a false sense of having checked over an encrypted transport.
+
 ## Setup
 
 ### 1. System dependencies
@@ -47,6 +53,13 @@ Install whichever of these you want available:
 sudo apt install dnsutils iputils-ping mtr-tiny whois
 ```
 
+`mtr` needs raw-socket access. Debian/Ubuntu's `mtr-tiny` package grants
+`cap_net_raw` to the `mtr-packet` helper at install time, so it normally
+works for an unprivileged service user without further setup — verify with
+`getcap "$(command -v mtr-packet)"` if `traceroute_path` reports a socket
+permission error. Without that capability, `traceroute_path` fails cleanly
+with a `ToolError` rather than crashing the server.
+
 ### 2. Install
 
 ```bash
@@ -58,7 +71,7 @@ uv tool install netdiag-mcp
 ### 3. Claude Code (manual)
 
 ```bash
-claude mcp add net-utils -- netdiag-mcp
+claude mcp add netdiag -- netdiag-mcp
 ```
 
 No environment variables are required.

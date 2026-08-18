@@ -43,6 +43,46 @@ def test_dns_lookup_rejects_bad_hostname():
         tools.dns_lookup("not a host", "A")
 
 
+def test_dns_lookup_rejects_unknown_transport():
+    with pytest.raises(ToolError, match="unsupported transport"):
+        tools.dns_lookup("example.com", "A", transport="quic")
+
+
+def test_dns_lookup_plain_transport_adds_no_flag(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(tools, "_run", lambda binary, args: captured.setdefault("args", args) or "ok")
+    tools.dns_lookup("example.com", "A", transport="plain")
+    assert "+tls" not in captured["args"]
+    assert "+https" not in captured["args"]
+
+
+@pytest.mark.parametrize("transport,flag", [("dot", "+tls"), ("doh", "+https")])
+def test_dns_lookup_encrypted_transport_adds_flag(monkeypatch, transport, flag):
+    captured = {}
+    monkeypatch.setattr(tools, "_run", lambda binary, args: captured.setdefault("args", args) or "ok")
+    tools.dns_lookup("example.com", "A", resolver="1.1.1.1", transport=transport)
+    assert flag in captured["args"]
+    assert "@1.1.1.1" in captured["args"]
+
+
+def test_dnssec_check_rejects_unknown_transport():
+    with pytest.raises(ToolError, match="unsupported transport"):
+        tools.dnssec_check("example.com", transport="quic")
+
+
+@pytest.mark.parametrize("transport,flag", [("dot", "+tls"), ("doh", "+https")])
+def test_dnssec_check_encrypted_transport_adds_flag(monkeypatch, transport, flag):
+    captured = {}
+
+    def fake_run(binary, args):
+        captured["args"] = args
+        return ";; flags: qr rd ra ad; QUERY: 1, ANSWER: 1"
+
+    monkeypatch.setattr(tools, "_run", fake_run)
+    tools.dnssec_check("example.com", transport=transport)
+    assert flag in captured["args"]
+
+
 def test_dnssec_check_detects_ad_flag(monkeypatch):
     fake_output = ";; flags: qr rd ra ad; QUERY: 1, ANSWER: 1\nexample.com. 300 IN A 192.0.2.1"
     monkeypatch.setattr(tools, "_run", lambda binary, args: fake_output)

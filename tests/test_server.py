@@ -26,8 +26,8 @@ def test_dns_lookup_wraps_validation_error_as_string():
 
 
 def test_dns_lookup_delegates_to_tools(monkeypatch):
-    monkeypatch.setattr(server.tools, "dns_lookup", lambda h, r, s: f"{h}/{r}/{s}")
-    assert server.dns_lookup("example.com", "MX", None) == "example.com/MX/None"
+    monkeypatch.setattr(server.tools, "dns_lookup", lambda h, r, s, t: f"{h}/{r}/{s}/{t}")
+    assert server.dns_lookup("example.com", "MX", None, "doh") == "example.com/MX/None/doh"
 
 
 def test_ping_host_wraps_tool_error(monkeypatch):

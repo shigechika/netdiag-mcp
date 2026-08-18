@@ -10,8 +10,8 @@
 
 | ツール | 用途 |
 |---|---|
-| `dns_lookup` | `dig`によるDNSレコード参照（A/AAAA/MX/TXT/NS/CNAME/SOA/PTR/CAA）。特定リゾルバ指定も可 |
-| `dnssec_check` | 検証済みリゾルバへ問い合わせてADビットの有無を確認する。素の`dig`でRRSIGが見えてもそれだけではDNSSEC検証済みとは言えないため、これが唯一の確実な確認方法 |
+| `dns_lookup` | `dig`によるDNSレコード参照（A/AAAA/MX/TXT/NS/CNAME/SOA/PTR/CAA）。特定リゾルバ指定・平文DNS/DoT/DoHの切り替えも可 |
+| `dnssec_check` | 検証済みリゾルバへ問い合わせてADビットの有無を確認する（平文/DoT/DoH）。素の`dig`でRRSIGが見えてもそれだけではDNSSEC検証済みとは言えないため、これが唯一の確実な確認方法 |
 | `ping_host` | ICMP ping（countは1〜10にクランプ） |
 | `traceroute_path` | `mtr --report`によるホップ単位の経路/ロスレポート（固定サイクル数、連続実行ではない） |
 | `tcp_port_check` | TCPポートの開閉確認（単純なsocket connect、ポートスキャンではない） |
@@ -24,6 +24,8 @@
 
 `tcp_port_check`・`http_check`・`tls_cert_check`はPython自身のsocket/ssl/httpxスタックを使い、`nc`/`curl`/`openssl`へシェルアウトしません。そのため`dig`/`ping`/`mtr`/`whois`のいずれかが入っていない（あるいは全く入っていない）ホストでもこの3つは動作します（`health_check`はどのバイナリが無いかを報告しますが、サーバー全体は落としません）。
 
+`dns_lookup`/`dnssec_check`は`transport="dot"`/`"doh"`でDNS over TLS・DNS over HTTPSにも対応します（digの`+tls`/`+https`）。BIND 9.18以降の`dig`が必要で、古い`dig`はこのフラグを黙って平文DNSにフォールバックせず明示的に拒否（エラー終了）します——「暗号化で確認したつもり」が実は平文だった、という誤検知を防ぐためです。
+
 ## セットアップ
 
 ### 1. システム依存パッケージ
@@ -34,6 +36,8 @@
 # Debian/Ubuntu
 sudo apt install dnsutils iputils-ping mtr-tiny whois
 ```
+
+`mtr`はraw socket権限が必要です。Debian/Ubuntuの`mtr-tiny`パッケージはインストール時に`mtr-packet`ヘルパーへ`cap_net_raw`を付与するため、通常は非特権のサービスユーザーでも追加設定なしに動作します——`traceroute_path`がsocket権限エラーを返す場合は`getcap "$(command -v mtr-packet)"`で確認してください。この権限が無い場合、`traceroute_path`はサーバーを落とさず`ToolError`としてクリーンに失敗します。
 
 ### 2. インストール
 
