@@ -101,6 +101,30 @@ netdiag-mcp --check     # report which wrapped binaries are present (exit 0 when
 - `tcp_port_check` connects to exactly one host:port per call; there is no
   loop or range argument, by design.
 
+## Development
+
+### Live smoke test
+
+Unit tests check logic against fixtures; they cannot tell you that a tool has
+stopped returning real data (a dead `dig`/`ping`/`mtr`/`whois` binary, a
+broken TLS trust store, a network that blocks outbound ICMP). `scripts/
+smoke_test.py` runs **every registered tool** against real public endpoints
+and fails on empty, malformed or error answers:
+
+```bash
+uv run python scripts/smoke_test.py
+uv run python scripts/smoke_test.py --only ping --traceback
+```
+
+- **No inventory, so every target is a fixed public endpoint** — Cloudflare's
+  `1.1.1.1` and IANA's `example.com` (reserved for documentation/testing use,
+  RFC 2606). This server takes no config and has nothing to discover a
+  target from, unlike a device-fleet MCP server in this family.
+- `tests/test_smoke_probes.py` is the offline half: it only checks that
+  every registered tool has a probe spec (and vice versa), so CI catches a
+  tool added without deciding how anyone would know it works, without
+  needing network access.
+
 ## License
 
 MIT
