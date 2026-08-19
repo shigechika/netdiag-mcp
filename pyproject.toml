@@ -29,6 +29,13 @@ dependencies = [
     "mcp>=1.2,<2",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "ruff",
+]
+
 [project.scripts]
 netdiag-mcp = "netdiag_mcp.__main__:main"
 
@@ -36,13 +43,6 @@ netdiag-mcp = "netdiag_mcp.__main__:main"
 Homepage = "https://github.com/shigechika/netdiag-mcp"
 Repository = "https://github.com/shigechika/netdiag-mcp"
 Issues = "https://github.com/shigechika/netdiag-mcp/issues"
-
-[dependency-groups]
-dev = [
-    "pytest",
-    "pytest-cov",
-    "ruff",
-]
 
 [tool.setuptools]
 packages = ["netdiag_mcp"]
