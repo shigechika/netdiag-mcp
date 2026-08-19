@@ -171,7 +171,13 @@ def test_tcp_port_check_closed_port():
     port = s.getsockname()[1]
     s.close()
     result = tools.tcp_port_check("127.0.0.1", port, timeout=2)
-    assert "closed" in result or "unreachable" in result
+    # Most platforms RST an unbound loopback port immediately (ECONNREFUSED).
+    # Windows CI runners have been observed to instead let the connect()
+    # attempt time out rather than refuse it right away, which
+    # tcp_port_check already handles as a distinct, valid outcome (see its
+    # `except TimeoutError` branch) -- accept either shape rather than
+    # assuming one platform's socket behavior everywhere.
+    assert "closed" in result or "unreachable" in result or "timed out" in result
 
 
 def test_http_check_reports_status_and_headers(monkeypatch):
