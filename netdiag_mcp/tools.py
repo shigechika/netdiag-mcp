@@ -14,7 +14,7 @@ import shutil
 import socket
 import ssl
 import subprocess
-from datetime import UTC, datetime
+import time
 
 import httpx
 
@@ -192,10 +192,10 @@ def tcp_port_check(host: str, port: int, timeout: float = DEFAULT_TIMEOUT) -> st
     target = validate_target(host)
     p = validate_port(port)
     t = clamp(timeout, 1, 15)
-    start = datetime.now(UTC)
+    start = time.monotonic()
     try:
         with socket.create_connection((target, p), timeout=t):
-            elapsed_ms = (datetime.now(UTC) - start).total_seconds() * 1000
+            elapsed_ms = (time.monotonic() - start) * 1000
             return f"{target}:{p} open ({elapsed_ms:.1f}ms)"
     except TimeoutError:
         return f"{target}:{p} timed out after {t:g}s"
@@ -208,11 +208,11 @@ def http_check(url: str, timeout: float = DEFAULT_TIMEOUT) -> str:
     t = clamp(timeout, 1, 15)
     try:
         with httpx.Client(follow_redirects=True, timeout=t) as client:
-            start = datetime.now(UTC)
+            start = time.monotonic()
             resp = client.head(url)
             if resp.status_code == 405:
                 resp = client.get(url)
-            elapsed_ms = (datetime.now(UTC) - start).total_seconds() * 1000
+            elapsed_ms = (time.monotonic() - start) * 1000
     except httpx.HTTPError as e:
         raise ToolError(f"HTTP request failed: {e}") from e
     lines = [f"{resp.status_code} {resp.reason_phrase}  {elapsed_ms:.0f}ms  final_url={resp.url}"]
