@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/shigechika/netdiag-mcp/compare/v0.2.0...v0.3.0) (2026-08-19)
+
+
+### Features
+
+* add live smoke test (scripts/smoke_test.py) ([#5](https://github.com/shigechika/netdiag-mcp/issues/5)) ([1f78da7](https://github.com/shigechika/netdiag-mcp/commit/1f78da7200d14ffcfb4963b2412850c9713c7361))
+
 ## [0.2.0](https://github.com/shigechika/netdiag-mcp/compare/v0.1.0...v0.2.0) (2026-08-19)
 
 
