@@ -76,7 +76,25 @@ pip install netdiag-mcp
 uv tool install netdiag-mcp
 ```
 
-### 3. Claude Code (manual)
+### 3. Claude Code (plugin)
+
+This repository doubles as a single-plugin marketplace, so Claude Code can install
+the server for you:
+
+```
+/plugin marketplace add shigechika/netdiag-mcp
+/plugin install netdiag-mcp@netdiag-mcp
+```
+
+The plugin launches `uvx netdiag-mcp`. No environment variables are required — the
+only prerequisite is the system dependencies above, and the TCP, HTTP and TLS
+checks work even without them.
+
+`uvx` must be on the `PATH` of the process that runs Claude Code — a login
+shell usually has it, but a GUI-launched app may not; install
+[uv](https://docs.astral.sh/uv/) system-wide if the plugin fails to start.
+
+### 4. Claude Code (manual)
 
 ```bash
 claude mcp add netdiag -- netdiag-mcp

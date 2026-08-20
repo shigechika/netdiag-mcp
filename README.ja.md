@@ -50,7 +50,25 @@ pip install netdiag-mcp
 uv tool install netdiag-mcp
 ```
 
-### 3. Claude Code（手動登録）
+### 3. Claude Code（プラグイン）
+
+このリポジトリはプラグイン 1 個のマーケットプレイスも兼ねているので、Claude Code から
+そのまま導入できます。
+
+```
+/plugin marketplace add shigechika/netdiag-mcp
+/plugin install netdiag-mcp@netdiag-mcp
+```
+
+プラグインは `uvx netdiag-mcp` を起動します。必須の環境変数はありません。前提は上記の
+システム依存パッケージだけで、TCP・HTTP・TLS のチェックはそれらが無くても動きます。
+
+プラグインは `uvx` を起動するため、Claude Code を実行するプロセスの `PATH` に
+`uvx` が通っている必要があります。ログインシェルなら通常問題ありませんが、
+GUI から起動した場合は通っていないことがあります。プラグインが起動しない場合は
+[uv](https://docs.astral.sh/uv/) をシステム全体にインストールしてください。
+
+### 4. Claude Code（手動登録）
 
 ```bash
 claude mcp add netdiag -- netdiag-mcp
