@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/shigechika/netdiag-mcp/compare/v0.3.0...v0.4.0) (2026-08-20)
+
+
+### Features
+
+* package the server as a Claude Code plugin ([#7](https://github.com/shigechika/netdiag-mcp/issues/7)) ([9d56cfa](https://github.com/shigechika/netdiag-mcp/commit/9d56cfa73144765ca6d6e7b64b4cca2ebb793be6))
+
 ## [0.3.0](https://github.com/shigechika/netdiag-mcp/compare/v0.2.0...v0.3.0) (2026-08-19)
 
 
