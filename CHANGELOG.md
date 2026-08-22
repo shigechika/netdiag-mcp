@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/shigechika/netdiag-mcp/compare/v0.4.0...v0.4.1) (2026-08-22)
+
+
+### Bug Fixes
+
+* set explicit TLS minimum version in tls_cert_check ([#11](https://github.com/shigechika/netdiag-mcp/issues/11)) ([41cf6cd](https://github.com/shigechika/netdiag-mcp/commit/41cf6cdaf5a005cbbaadff1c7c6d7d2bb76ddf3f))
+
 ## [0.4.0](https://github.com/shigechika/netdiag-mcp/compare/v0.3.0...v0.4.0) (2026-08-20)
 
 
