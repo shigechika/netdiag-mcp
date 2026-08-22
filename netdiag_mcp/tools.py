@@ -230,6 +230,11 @@ def tls_cert_check(host: str, port: int = 443) -> str:
     target = validate_target(host)
     p = validate_port(port)
     ctx = ssl.create_default_context()
+    # create_default_context() already excludes TLS 1.0/1.1 on modern Python,
+    # but CodeQL's py/insecure-protocol flags the absence of an explicit
+    # minimum here regardless — set it explicitly so the guarantee doesn't
+    # depend on the runtime's ssl module defaults.
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
     try:
         with socket.create_connection((target, p), timeout=DEFAULT_TIMEOUT) as sock:
             with ctx.wrap_socket(sock, server_hostname=target) as tls:
