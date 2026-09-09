@@ -290,3 +290,17 @@ def test_current_time_rejects_a_path_shaped_timezone():
 def test_current_time_rejects_a_well_formed_but_unknown_timezone():
     with pytest.raises(ToolError, match="unknown timezone"):
         tools.current_time("Mars/Olympus_Mons")
+
+
+def test_current_time_keeps_a_sub_minute_offset_intact():
+    """Pre-1900 local mean time carries seconds in its UTC offset.
+
+    Unreachable through the MCP tool, which always reports now — but the
+    offset has to come from the same rendering as ``iso`` rather than a
+    fixed-width slice of ``%z`` (``+091859``), which would silently emit
+    ``+09:1859``.
+    """
+    got = tools.current_time("Asia/Tokyo", now=datetime(1880, 1, 1, tzinfo=dt_timezone.utc))
+    assert got["iso"].endswith(got["utc_offset"])
+    assert got["utc_offset"].count(":") == 2, "offset truncated to ±HH:MM"
+    assert datetime.fromisoformat(got["iso"]).utcoffset().total_seconds() % 60 != 0

@@ -289,7 +289,7 @@ def current_time(timezone: str = "UTC", now: datetime | None = None) -> dict:
         moment = moment.replace(tzinfo=_dt_timezone.utc)
     local = moment.astimezone(tz)
     index = local.weekday()
-    offset = local.strftime("%z")
+    iso = local.isoformat(timespec="seconds")
     return {
         "timezone": zone,
         "date": local.strftime("%Y-%m-%d"),
@@ -297,8 +297,13 @@ def current_time(timezone: str = "UTC", now: datetime | None = None) -> dict:
         "weekday": _WEEKDAYS_EN[index],
         "weekday_ja": _WEEKDAYS_JA[index],
         "weekday_index": index,
-        "iso": local.isoformat(timespec="seconds"),
-        "utc_offset": f"{offset[:3]}:{offset[3:]}",
+        "iso": iso,
+        # Taken from the ISO string rather than rebuilt from %z: isoformat
+        # renders ±HH:MM, and ±HH:MM:SS for the sub-minute offsets that
+        # pre-1900 local mean time carries, whereas %z is ±HHMM(SS) and
+        # would need its own width special-case. timespec="seconds" fixes
+        # the datetime half at 19 characters, so the rest is the offset.
+        "utc_offset": iso[19:],
         "utc": moment.astimezone(_dt_timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "epoch": int(moment.timestamp()),
     }
