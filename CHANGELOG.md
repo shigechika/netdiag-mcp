@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/shigechika/netdiag-mcp/compare/v0.4.0...v0.5.0) (2026-09-09)
+
+
+### Features
+
+* add current_time so nobody has to calculate a weekday ([#13](https://github.com/shigechika/netdiag-mcp/issues/13)) ([2e612b2](https://github.com/shigechika/netdiag-mcp/commit/2e612b2e62027f1145899c7e793c445434d632bb))
+
+
+### Bug Fixes
+
+* set explicit TLS minimum version in tls_cert_check ([#11](https://github.com/shigechika/netdiag-mcp/issues/11)) ([41cf6cd](https://github.com/shigechika/netdiag-mcp/commit/41cf6cdaf5a005cbbaadff1c7c6d7d2bb76ddf3f))
+
 ## [0.4.0](https://github.com/shigechika/netdiag-mcp/compare/v0.3.0...v0.4.0) (2026-08-20)
 
 
