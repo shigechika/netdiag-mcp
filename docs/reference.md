@@ -65,11 +65,25 @@ ASN + country-code lookup for an IP, or org info for an AS number (e.g.
 GeoIP database needed. Takes an IP literal or AS number, not a hostname;
 resolve first with `dns_lookup` if you only have a name.
 
+### `current_time(timezone="UTC")`
+
+Current date, time and weekday in the given IANA timezone (e.g.
+`Asia/Tokyo`). Returns `date`, `time`, `weekday` (`Mon`..`Sun`),
+`weekday_ja` (`月`..`日`), `weekday_index` (0 = Monday), `iso`,
+`utc_offset`, `utc` and `epoch`.
+
+Call this rather than working the weekday out from a date: that is calendar
+arithmetic, and a caller that gets it wrong gets it wrong silently. Touches
+no network — it reports this server's own clock, which also makes it a check
+on whether that clock has drifted.
+
 ## Errors
 
 Every tool catches `ValueError` (bad input) and `ToolError` (the wrapped
-command failed) and returns them as a `"error: ..."` string rather than
-raising, so a caller always gets a string back.
+command failed) and returns them rather than raising, so a caller always
+gets an answer back. Tools that answer with text return the string
+`"error: ..."`; `current_time` and `health_check` answer with a dict, so
+their failure carries an `"error"` key instead.
 
 ## CLI
 

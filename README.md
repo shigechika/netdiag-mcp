@@ -21,6 +21,7 @@ Built for triaging "can't reach X" / "is DNS propagated yet" reports without she
 | `tls_cert_check` | Fetch the certificate a host presents and report subject/issuer/validity/SANs |
 | `whois_lookup` | WHOIS lookup for a domain |
 | `asn_lookup` | ASN + country-code lookup for an IP, or org info for an AS number, via Team Cymru's whois service — no API key or GeoIP database needed |
+| `current_time` | Current date, time and weekday in an IANA timezone — the weekday is returned as data because deriving it from a date is arithmetic that fails silently. Also reports UTC and epoch, so it doubles as a clock check |
 | `health_check` | Version and which wrapped binaries (`dig`/`ping`/`mtr`/`whois`) are present on PATH |
 
 All tools are read-only and single-target (no batch/sweep mode) — this is a

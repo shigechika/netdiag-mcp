@@ -80,6 +80,17 @@ PROBES: dict[str, Probe] = {
         must_match=(r"(?im)^domain:\s*example\.com",),
         must_not_match=NO_ERROR,
     ),
+    "current_time": Probe(
+        # The only tool here that touches no network at all: it reports this
+        # server's own clock, so the probe pins the shape and the requested
+        # zone rather than a value that changes every second.
+        args={"timezone": "Asia/Tokyo"},
+        require_keys=("timezone", "date", "time", "weekday", "weekday_ja", "utc", "epoch"),
+        must_match=(r'"timezone": "Asia/Tokyo"', r'"weekday": "(Mon|Tue|Wed|Thu|Fri|Sat|Sun)"'),
+        # This tool answers with a dict, so a failure surfaces as an "error"
+        # key rather than the "error: " prefix the text tools use.
+        must_not_match=(r'"error"',),
+    ),
     "asn_lookup": Probe(
         # 1.1.1.1 is Cloudflare's, stably AS13335.
         args={"target": "1.1.1.1"},

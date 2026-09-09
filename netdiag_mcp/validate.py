@@ -11,6 +11,7 @@ import ipaddress
 import re
 
 _HOSTNAME_RE = re.compile(r"^(?=.{1,253}$)(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))*\.?$")
+_TIMEZONE_RE = re.compile(r"^[A-Za-z0-9+_-]+(/[A-Za-z0-9+_-]+){0,2}$")
 
 
 def validate_target(value: str) -> str:
@@ -45,3 +46,19 @@ def validate_port(value: int) -> int:
 
 def clamp(value: int, low: int, high: int) -> int:
     return max(low, min(high, int(value)))
+
+
+def validate_timezone(value: str) -> str:
+    """Return value unchanged if it has the shape of an IANA timezone key.
+
+    ZoneInfo resolves the key against files on disk, so it is bounded and
+    shape-checked here before being handed over: no absolute paths, no
+    traversal, no whitespace. Whether the zone actually exists is left to
+    ZoneInfo — this only rejects input that could not be a zone name at all.
+    """
+    zone = value.strip()
+    if not zone or len(zone) > 64:
+        raise ValueError("timezone must be a non-empty IANA name, e.g. 'Asia/Tokyo'")
+    if not _TIMEZONE_RE.match(zone):
+        raise ValueError(f"not a valid IANA timezone name: {value!r}")
+    return zone

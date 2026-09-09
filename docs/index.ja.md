@@ -20,6 +20,7 @@ TLS証明書確認・WHOIS・ASN/GeoIP逆引きを1本にまとめています�
 | `tls_cert_check` | ホストが提示する証明書を取得しsubject/issuer/有効期限/SANを報告 |
 | `whois_lookup` | ドメインのWHOIS参照 |
 | `asn_lookup` | Team CymruのwhoisサービスによるIPのAS番号・国コード逆引き、またはAS番号の組織情報（APIキー・GeoIP DB不要） |
+| `current_time` | 指定したIANAタイムゾーンでの現在日時と曜日。曜日を日付から導くのは暦の計算で、間違えても気づけないためデータとして返す。UTC・epochも返すのでサーバー時刻の点検にも使える |
 | `health_check` | バージョンとラップしているバイナリ（`dig`/`ping`/`mtr`/`whois`）のPATH上の有無 |
 
 全ツールは読み取り専用・単一ターゲットのみ（バッチ/スイープ機能なし）です。運用者が手動で

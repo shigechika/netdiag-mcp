@@ -131,3 +131,18 @@ def asn_lookup(target: str) -> str:
         return tools.asn_lookup(target)
     except (ValueError, ToolError) as e:
         return f"error: {e}"
+
+
+@mcp.tool()
+def current_time(timezone: str = "UTC") -> dict:
+    """Current date, time and weekday in an IANA timezone (e.g. "Asia/Tokyo").
+
+    Call this rather than deriving the weekday from a date yourself —
+    that is calendar arithmetic and it fails silently. Returns the date,
+    the 24h time, the weekday in English and Japanese, the offset, UTC and
+    the epoch, so it also serves as a clock check on this server.
+    """
+    try:
+        return tools.current_time(timezone)
+    except (ValueError, ToolError) as e:
+        return {"error": str(e)}
