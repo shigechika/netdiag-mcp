@@ -1,6 +1,8 @@
 import socket
 import subprocess
 import threading
+from datetime import datetime, timedelta
+from datetime import timezone as dt_timezone
 
 import httpx
 import pytest
@@ -235,3 +237,70 @@ def test_asn_lookup_passes_through_ip(monkeypatch):
 def test_asn_lookup_rejects_hostname():
     with pytest.raises(ToolError, match="not a hostname"):
         tools.asn_lookup("example.com")
+
+
+def test_current_time_names_every_weekday_correctly():
+    """The whole point of the tool: a weekday nobody had to calculate.
+
+    2026-09-07 was a Monday; walk one full week from there so a
+    lookup table that is rotated or short fails here rather than in a
+    published report.
+    """
+    expected = [("Mon", "月"), ("Tue", "火"), ("Wed", "水"), ("Thu", "木"), ("Fri", "金"), ("Sat", "土"), ("Sun", "日")]
+    monday = datetime(2026, 9, 7, 12, 0, tzinfo=dt_timezone.utc)
+    for offset, (english, japanese) in enumerate(expected):
+        got = tools.current_time("UTC", now=monday + timedelta(days=offset))
+        assert (got["weekday"], got["weekday_ja"]) == (english, japanese)
+        assert got["weekday_index"] == offset
+        assert got["date"] == (monday + timedelta(days=offset)).strftime("%Y-%m-%d")
+
+
+def test_current_time_converts_into_the_requested_zone():
+    """A moment that is still the 8th in UTC is already the 9th in Tokyo."""
+    got = tools.current_time("Asia/Tokyo", now=datetime(2026, 9, 8, 15, 30, tzinfo=dt_timezone.utc))
+    assert got["date"] == "2026-09-09"
+    assert got["time"] == "00:30"
+    assert got["weekday"] == "Wed"
+    assert got["weekday_ja"] == "水"
+    assert got["timezone"] == "Asia/Tokyo"
+    assert got["utc_offset"] == "+09:00"
+    assert got["iso"] == "2026-09-09T00:30:00+09:00"
+    assert got["utc"] == "2026-09-08T15:30:00Z"
+
+
+def test_current_time_reads_a_naive_moment_as_utc():
+    """Never as the host's local time — the answer must not depend on the server's tz."""
+    naive = tools.current_time("Asia/Tokyo", now=datetime(2026, 9, 8, 15, 30))
+    aware = tools.current_time("Asia/Tokyo", now=datetime(2026, 9, 8, 15, 30, tzinfo=dt_timezone.utc))
+    assert naive == aware
+
+
+def test_current_time_defaults_to_utc():
+    got = tools.current_time(now=datetime(2026, 9, 8, 15, 30, tzinfo=dt_timezone.utc))
+    assert got["timezone"] == "UTC"
+    assert got["date"] == "2026-09-08"
+    assert got["utc_offset"] == "+00:00"
+
+
+def test_current_time_rejects_a_path_shaped_timezone():
+    with pytest.raises(ValueError):
+        tools.current_time("../../etc/passwd")
+
+
+def test_current_time_rejects_a_well_formed_but_unknown_timezone():
+    with pytest.raises(ToolError, match="unknown timezone"):
+        tools.current_time("Mars/Olympus_Mons")
+
+
+def test_current_time_keeps_a_sub_minute_offset_intact():
+    """Pre-1900 local mean time carries seconds in its UTC offset.
+
+    Unreachable through the MCP tool, which always reports now — but the
+    offset has to come from the same rendering as ``iso`` rather than a
+    fixed-width slice of ``%z`` (``+091859``), which would silently emit
+    ``+09:1859``.
+    """
+    got = tools.current_time("Asia/Tokyo", now=datetime(1880, 1, 1, tzinfo=dt_timezone.utc))
+    assert got["iso"].endswith(got["utc_offset"])
+    assert got["utc_offset"].count(":") == 2, "offset truncated to ±HH:MM"
+    assert datetime.fromisoformat(got["iso"]).utcoffset().total_seconds() % 60 != 0

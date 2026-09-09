@@ -15,10 +15,13 @@ import socket
 import ssl
 import subprocess
 import time
+from datetime import datetime
+from datetime import timezone as _dt_timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 
-from netdiag_mcp.validate import clamp, validate_port, validate_target
+from netdiag_mcp.validate import clamp, validate_port, validate_target, validate_timezone
 
 DEFAULT_TIMEOUT = 5.0
 SUBPROCESS_TIMEOUT = 15.0
@@ -31,6 +34,10 @@ DNS_RECORD_TYPES = {"A", "AAAA", "MX", "TXT", "NS", "CNAME", "SOA", "PTR", "CAA"
 # plain DNS, so a stale `dig` fails loudly here instead of giving a false
 # sense of having checked over an encrypted transport.
 _DNS_TRANSPORT_FLAGS = {"plain": None, "dot": "+tls", "doh": "+https"}
+
+# Indexed by datetime.weekday() — 0 is Monday.
+_WEEKDAYS_EN = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+_WEEKDAYS_JA = ("月", "火", "水", "木", "金", "土", "日")
 
 
 class ToolError(Exception):
@@ -256,3 +263,52 @@ def tls_cert_check(host: str, port: int = 443) -> str:
     if sans:
         lines.append(f"subjectAltName: {', '.join(sans)}")
     return "\n".join(lines)
+
+
+def current_time(timezone: str = "UTC", now: datetime | None = None) -> dict:
+    """Current date, time and weekday in the requested IANA timezone.
+
+    The weekday is the reason this exists. Working it out from a date is
+    calendar arithmetic, and a caller that gets it wrong gets it wrong
+    silently, so it is returned as data instead. ``weekday_ja`` carries the
+    same value in Japanese for callers rendering Japanese output.
+
+    Doubles as a clock check: a host whose time has drifted breaks TLS
+    validity windows, Kerberos and log correlation, so ``utc`` and ``epoch``
+    are reported next to the local view.
+
+    Args:
+        timezone: IANA zone name, e.g. "Asia/Tokyo". Defaults to UTC.
+        now: fixed moment to report instead of the current one.
+            # injectable for tests
+    """
+    zone = validate_timezone(timezone)
+    try:
+        tz = ZoneInfo(zone)
+    except (ZoneInfoNotFoundError, ValueError) as e:
+        raise ToolError(f"unknown timezone {zone!r}: {e}") from e
+    moment = now if now is not None else datetime.now(_dt_timezone.utc)
+    if moment.tzinfo is None:
+        # A naive moment is read as UTC, never as the host's local time, so
+        # the answer does not depend on how the server happens to be set.
+        moment = moment.replace(tzinfo=_dt_timezone.utc)
+    local = moment.astimezone(tz)
+    index = local.weekday()
+    iso = local.isoformat(timespec="seconds")
+    return {
+        "timezone": zone,
+        "date": local.strftime("%Y-%m-%d"),
+        "time": local.strftime("%H:%M"),
+        "weekday": _WEEKDAYS_EN[index],
+        "weekday_ja": _WEEKDAYS_JA[index],
+        "weekday_index": index,
+        "iso": iso,
+        # Taken from the ISO string rather than rebuilt from %z: isoformat
+        # renders ±HH:MM, and ±HH:MM:SS for the sub-minute offsets that
+        # pre-1900 local mean time carries, whereas %z is ±HHMM(SS) and
+        # would need its own width special-case. timespec="seconds" fixes
+        # the datetime half at 19 characters, so the rest is the offset.
+        "utc_offset": iso[19:],
+        "utc": moment.astimezone(_dt_timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "epoch": int(moment.timestamp()),
+    }

@@ -55,3 +55,14 @@ def test_asn_lookup_wraps_tool_error(monkeypatch):
 def test_asn_lookup_delegates_to_tools(monkeypatch):
     monkeypatch.setattr(server.tools, "asn_lookup", lambda t: f"asn-result for {t}")
     assert server.asn_lookup("8.8.8.8") == "asn-result for 8.8.8.8"
+
+
+def test_current_time_wraps_validation_error_as_dict():
+    """This tool answers with a dict, so its error must be one too."""
+    out = server.current_time("../../etc/passwd")
+    assert set(out) == {"error"}
+
+
+def test_current_time_delegates_to_tools(monkeypatch):
+    monkeypatch.setattr(server.tools, "current_time", lambda tz: {"timezone": tz})
+    assert server.current_time("Asia/Tokyo") == {"timezone": "Asia/Tokyo"}
