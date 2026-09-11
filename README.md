@@ -18,7 +18,7 @@ Built for triaging "can't reach X" / "is DNS propagated yet" reports without she
 | `traceroute_path` | Hop-by-hop path/loss report via `mtr --report` (fixed cycles, not a live/continuous run) |
 | `tcp_port_check` | Is a TCP port open — a plain socket connect, not a port scan |
 | `http_check` | HEAD/GET a URL and report status, redirect chain, and latency |
-| `http_get` | GET a URL and return the body (text/JSON/XML only, capped at 1 MiB) |
+| `http_get` | GET a URL and return the body. Textual types only (`text/*`, JSON, XML, JavaScript, YAML, `+json`/`+xml`), capped at 1 MiB. Refuses loopback, link-local and cloud-metadata destinations, including via redirect |
 | `tls_cert_check` | Fetch the certificate a host presents and report subject/issuer/validity/SANs |
 | `whois_lookup` | WHOIS lookup for a domain |
 | `asn_lookup` | ASN + country-code lookup for an IP, or org info for an AS number, via Team Cymru's whois service — no API key or GeoIP database needed |

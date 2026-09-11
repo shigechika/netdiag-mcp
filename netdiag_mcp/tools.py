@@ -15,6 +15,7 @@ import socket
 import ssl
 import subprocess
 import time
+import urllib.parse
 from datetime import datetime
 from datetime import timezone as _dt_timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -234,8 +235,24 @@ def http_check(url: str, timeout: float = DEFAULT_TIMEOUT) -> str:
 
 HTTP_GET_DEFAULT_BYTES = 256 * 1024
 HTTP_GET_MAX_BYTES = 1024 * 1024
-_TEXTUAL_TYPES = ("text/", "application/json", "application/xml", "application/javascript",
-                  "application/x-ndjson", "application/yaml", "application/x-yaml")
+HTTP_GET_MAX_REDIRECTS = 5
+_TEXTUAL_TYPES = (
+    "text/",
+    "application/json",
+    "application/xml",
+    "application/javascript",
+    "application/x-ndjson",
+    "application/yaml",
+    "application/x-yaml",
+)
+# Destinations http_get refuses to fetch. Loopback and link-local cover the cloud
+# instance-metadata services (169.254.169.254 on AWS/GCP/Azure, fd00:ec2::254 on
+# AWS IPv6) that hand out credentials to anything on the box; the hostnames are
+# the well-known aliases for the same endpoints.
+_BLOCKED_NETS = tuple(
+    ipaddress.ip_network(n) for n in ("127.0.0.0/8", "169.254.0.0/16", "::1/128", "fe80::/10", "fd00:ec2::254/128")
+)
+_BLOCKED_HOSTS = frozenset({"localhost", "metadata", "metadata.google.internal", "instance-data"})
 
 
 def _is_textual(content_type: str) -> bool:
@@ -245,34 +262,87 @@ def _is_textual(content_type: str) -> bool:
     return ctype.endswith("+json") or ctype.endswith("+xml")
 
 
-def http_get(url: str, timeout: float = DEFAULT_TIMEOUT, max_bytes: int = HTTP_GET_DEFAULT_BYTES) -> str:
-    """GET a URL via httpx and return the decoded body (textual types only, size-capped)."""
-    t = clamp(timeout, 1, 15)
-    limit = clamp(max_bytes, 1024, HTTP_GET_MAX_BYTES)
+def _check_destination(url: str) -> str:
+    """Validate scheme/host and refuse loopback, link-local and metadata endpoints.
+
+    Resolves the hostname and checks every address, so a name that points at a
+    blocked range is refused too. The check happens before the connection is
+    opened; a record that changes between the check and the connect is not
+    covered, which is acceptable for a diagnostics tool.
+    """
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme not in ("http", "https"):
+        raise ValueError("url must start with http:// or https://")
+    if not parts.hostname:
+        raise ValueError("url has no host")
+    host = validate_target(parts.hostname)
+    if host.lower().rstrip(".") in _BLOCKED_HOSTS:
+        raise ToolError(f"refusing to fetch {host}: blocked destination")
     try:
-        with httpx.Client(follow_redirects=True, timeout=t) as client:
-            with client.stream("GET", url) as resp:
-                ctype = resp.headers.get("content-type", "")
-                buf = bytearray()
-                if _is_textual(ctype):
-                    for chunk in resp.iter_bytes():
-                        buf.extend(chunk)
-                        if len(buf) > limit:
-                            break
-                status = f"{resp.status_code} {resp.reason_phrase}"
-                final_url = str(resp.url)
-                encoding = resp.encoding or "utf-8"
+        addrs = {ipaddress.ip_address(host)}
+    except ValueError:
+        try:
+            port = parts.port or (443 if parts.scheme == "https" else 80)
+            infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
+        except socket.gaierror as e:
+            raise ToolError(f"cannot resolve {host}: {e}") from e
+        addrs = {ipaddress.ip_address(info[4][0]) for info in infos}
+    for addr in addrs:
+        if any(addr in net for net in _BLOCKED_NETS):
+            raise ToolError(f"refusing to fetch {host}: resolves to blocked address {addr}")
+    return url
+
+
+def http_get(url: str, timeout: float = DEFAULT_TIMEOUT, max_bytes: int = HTTP_GET_DEFAULT_BYTES) -> str:
+    """GET a URL via httpx and return the decoded body (textual types only, size-capped).
+
+    Redirects are followed by hand, one hop at a time, so every destination is
+    checked against the blocklist and no intermediate body is ever read.
+    """
+    t = clamp(timeout, 1, 15)
+    limit = clamp(max_bytes, 1, HTTP_GET_MAX_BYTES)
+    current = _check_destination(url.strip())
+    hops: list[str] = []
+    try:
+        with httpx.Client(follow_redirects=False, timeout=t) as client:
+            for _ in range(HTTP_GET_MAX_REDIRECTS + 1):
+                with client.stream("GET", current) as resp:
+                    if resp.is_redirect and "location" in resp.headers:
+                        hops.append(current)
+                        current = _check_destination(str(resp.url.join(resp.headers["location"])))
+                        continue
+                    ctype = resp.headers.get("content-type", "")
+                    status = f"{resp.status_code} {resp.reason_phrase}"
+                    final_url = str(resp.url)
+                    encoding = resp.encoding or "utf-8"
+                    buf = bytearray()
+                    if _is_textual(ctype):
+                        for chunk in resp.iter_bytes(chunk_size=65536):
+                            room = limit + 1 - len(buf)
+                            buf.extend(chunk[:room])
+                            if len(buf) > limit:
+                                break
+                    break
+            else:
+                raise ToolError(f"too many redirects (>{HTTP_GET_MAX_REDIRECTS})")
     except httpx.HTTPError as e:
         raise ToolError(f"HTTP request failed: {e}") from e
+    head = f"{status}  final_url={final_url}  content-type={ctype or '(none)'}"
+    if hops:
+        head += "\nredirects: " + " -> ".join([*hops, final_url])
     if not _is_textual(ctype):
-        return (f"{status}  final_url={final_url}  content-type={ctype or '(none)'}\n"
-                "body not returned: non-textual content type")
+        return head + "\nbody not returned: non-textual content type"
     truncated = len(buf) > limit
-    body = bytes(buf[:limit]).decode(encoding, errors="replace")
-    head = f"{status}  final_url={final_url}  content-type={ctype}  bytes={min(len(buf), limit)}"
+    raw = bytes(buf[:limit])
+    try:
+        body = raw.decode(encoding, errors="replace")
+    except LookupError:
+        body = raw.decode("utf-8", errors="replace")
+    head += f"  bytes={len(raw)}"
     if truncated:
         head += f"  (truncated at {limit} bytes)"
     return head + "\n\n" + body
+
 
 def tls_cert_check(host: str, port: int = 443) -> str:
     """Native ssl/socket TLS handshake — reports the peer certificate, not raw openssl s_client text."""

@@ -16,7 +16,7 @@
 | `traceroute_path` | `mtr --report`によるホップ単位の経路/ロスレポート（固定サイクル数、連続実行ではない） |
 | `tcp_port_check` | TCPポートの開閉確認（単純なsocket connect、ポートスキャンではない） |
 | `http_check` | URLへHEAD/GETしステータス・リダイレクトチェーン・レイテンシを報告 |
-| `http_get` | URLへGETし本文を返す（text/JSON/XMLのみ、上限1 MiB） |
+| `http_get` | URLへGETし本文を返す。テキスト系のみ（`text/*`・JSON・XML・JavaScript・YAML・`+json`/`+xml`）、上限1 MiB。ループバック・リンクローカル・クラウドのメタデータ宛先はリダイレクト経由も含めて拒否 |
 | `tls_cert_check` | 提示されたTLS証明書のsubject/issuer/有効期限/SANを報告 |
 | `whois_lookup` | ドメインのWHOIS参照 |
 | `asn_lookup` | Team CymruのwhoisサービスによるIPのASN・国コード参照、またはAS番号の組織情報参照。APIキーやGeoIP DB不要 |

@@ -198,20 +198,25 @@ def test_http_check_reports_status_and_headers(monkeypatch):
     assert "server: test-server" in result
 
 
-def _mock_client(monkeypatch, handler):
+def _mock_client(monkeypatch, handler, resolve_to="93.184.216.34"):
     real_client = httpx.Client
 
     def fake_client(*args, **kwargs):
         kwargs["transport"] = httpx.MockTransport(handler)
         return real_client(*args, **kwargs)
 
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        return [(None, None, None, None, (resolve_to, port))]
+
     monkeypatch.setattr(tools.httpx, "Client", fake_client)
+    monkeypatch.setattr(tools.socket, "getaddrinfo", fake_getaddrinfo)
 
 
 def test_http_get_returns_json_body(monkeypatch):
     def handler(request):
-        return httpx.Response(200, headers={"content-type": "application/json"},
-                              content=b'{"ok": true}', request=request)
+        return httpx.Response(
+            200, headers={"content-type": "application/json"}, content=b'{"ok": true}', request=request
+        )
 
     _mock_client(monkeypatch, handler)
     result = tools.http_get("https://example.com/x.json")
@@ -222,8 +227,7 @@ def test_http_get_returns_json_body(monkeypatch):
 
 def test_http_get_truncates_at_limit(monkeypatch):
     def handler(request):
-        return httpx.Response(200, headers={"content-type": "text/plain"},
-                              content=b"a" * 5000, request=request)
+        return httpx.Response(200, headers={"content-type": "text/plain"}, content=b"a" * 5000, request=request)
 
     _mock_client(monkeypatch, handler)
     result = tools.http_get("https://example.com/big", max_bytes=1024)
@@ -234,8 +238,9 @@ def test_http_get_truncates_at_limit(monkeypatch):
 
 def test_http_get_refuses_binary_body(monkeypatch):
     def handler(request):
-        return httpx.Response(200, headers={"content-type": "application/octet-stream"},
-                              content=b"\x00\x01\x02", request=request)
+        return httpx.Response(
+            200, headers={"content-type": "application/octet-stream"}, content=b"\x00\x01\x02", request=request
+        )
 
     _mock_client(monkeypatch, handler)
     result = tools.http_get("https://example.com/blob")
@@ -245,11 +250,88 @@ def test_http_get_refuses_binary_body(monkeypatch):
 
 def test_http_get_accepts_structured_suffix_types(monkeypatch):
     def handler(request):
-        return httpx.Response(200, headers={"content-type": "application/problem+json"},
-                              content=b'{"title": "x"}', request=request)
+        return httpx.Response(
+            200, headers={"content-type": "application/problem+json"}, content=b'{"title": "x"}', request=request
+        )
 
     _mock_client(monkeypatch, handler)
     assert '{"title": "x"}' in tools.http_get("https://example.com/p")
+
+
+def test_http_get_refuses_metadata_ip_literal(monkeypatch):
+    _mock_client(monkeypatch, lambda request: httpx.Response(200, request=request))
+    with pytest.raises(ToolError, match="blocked"):
+        tools.http_get("http://169.254.169.254/latest/meta-data/")
+
+
+def test_http_get_refuses_host_resolving_to_blocked_range(monkeypatch):
+    _mock_client(monkeypatch, lambda request: httpx.Response(200, request=request), resolve_to="127.0.0.1")
+    with pytest.raises(ToolError, match="blocked address"):
+        tools.http_get("https://evil.example/")
+
+
+def test_http_get_refuses_metadata_hostname(monkeypatch):
+    _mock_client(monkeypatch, lambda request: httpx.Response(200, request=request))
+    with pytest.raises(ToolError, match="blocked destination"):
+        tools.http_get("http://metadata.google.internal/computeMetadata/v1/")
+
+
+def test_http_get_rejects_non_http_scheme():
+    with pytest.raises(ValueError, match="http"):
+        tools.http_get("ftp://example.com/x")
+
+
+def test_http_get_checks_redirect_target(monkeypatch):
+    def handler(request):
+        if request.url.host == "example.com":
+            return httpx.Response(302, headers={"location": "http://169.254.169.254/"}, request=request)
+        return httpx.Response(200, content=b"secret", request=request)
+
+    _mock_client(monkeypatch, handler)
+    with pytest.raises(ToolError, match="blocked"):
+        tools.http_get("https://example.com/")
+
+
+def test_http_get_follows_redirects_and_reports_chain(monkeypatch):
+    def handler(request):
+        if request.url.path == "/a":
+            return httpx.Response(301, headers={"location": "/b"}, request=request)
+        return httpx.Response(200, headers={"content-type": "text/plain"}, content=b"done", request=request)
+
+    _mock_client(monkeypatch, handler)
+    result = tools.http_get("https://example.com/a")
+    assert "redirects: https://example.com/a -> https://example.com/b" in result
+    assert result.endswith("done")
+
+
+def test_http_get_stops_after_too_many_redirects(monkeypatch):
+    def handler(request):
+        return httpx.Response(302, headers={"location": "/loop"}, request=request)
+
+    _mock_client(monkeypatch, handler)
+    with pytest.raises(ToolError, match="too many redirects"):
+        tools.http_get("https://example.com/loop")
+
+
+def test_http_get_honours_tiny_max_bytes(monkeypatch):
+    _mock_client(
+        monkeypatch,
+        lambda request: httpx.Response(200, headers={"content-type": "text/plain"}, content=b"abcdef", request=request),
+    )
+    result = tools.http_get("https://example.com/", max_bytes=3)
+    assert result.split("\n\n", 1)[1] == "abc"
+    assert "(truncated at 3 bytes)" in result
+
+
+def test_http_get_falls_back_when_charset_is_not_a_text_codec(monkeypatch):
+    _mock_client(
+        monkeypatch,
+        lambda request: httpx.Response(
+            200, headers={"content-type": "text/plain; charset=zlib_codec"}, content=b"plain", request=request
+        ),
+    )
+    result = tools.http_get("https://example.com/")
+    assert result.endswith("plain")
 
 
 def test_http_get_wraps_transport_errors(monkeypatch):
