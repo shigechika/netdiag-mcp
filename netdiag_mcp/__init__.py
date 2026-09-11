@@ -1,3 +1,3 @@
 """netdiag-mcp — on-demand network diagnostics MCP Server (dig, ping, mtr, whois, TLS/HTTP checks)."""
 
-__version__ = "0.5.0"  # x-release-please-version
+__version__ = "0.6.0"  # x-release-please-version
