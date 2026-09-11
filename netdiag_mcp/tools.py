@@ -236,6 +236,7 @@ def http_check(url: str, timeout: float = DEFAULT_TIMEOUT) -> str:
 HTTP_GET_DEFAULT_BYTES = 256 * 1024
 HTTP_GET_MAX_BYTES = 1024 * 1024
 HTTP_GET_MAX_REDIRECTS = 5
+HTTP_GET_BUDGET_FACTOR = 3  # whole-call wall clock = timeout * this, across redirects and the body read
 _TEXTUAL_TYPES = (
     "text/",
     "application/json",
@@ -288,7 +289,11 @@ def _check_destination(url: str) -> str:
             raise ToolError(f"cannot resolve {host}: {e}") from e
         addrs = {ipaddress.ip_address(info[4][0]) for info in infos}
     for addr in addrs:
-        if any(addr in net for net in _BLOCKED_NETS):
+        # ::ffff:127.0.0.1 is IPv6 to ipaddress but reaches the IPv4 loopback;
+        # compare the embedded IPv4 address. 0.0.0.0 / :: connect to localhost
+        # on Linux and belong to no listed range, so refuse them by name.
+        real = getattr(addr, "ipv4_mapped", None) or addr
+        if real.is_unspecified or any(real in net for net in _BLOCKED_NETS):
             raise ToolError(f"refusing to fetch {host}: resolves to blocked address {addr}")
     return url
 
@@ -298,14 +303,26 @@ def http_get(url: str, timeout: float = DEFAULT_TIMEOUT, max_bytes: int = HTTP_G
 
     Redirects are followed by hand, one hop at a time, so every destination is
     checked against the blocklist and no intermediate body is ever read.
+
+    ``timeout`` is httpx's per-operation (connect/read) timeout; a server that
+    trickles one byte per read would never trip it, so the whole call is also
+    bounded by ``timeout * HTTP_GET_BUDGET_FACTOR`` of wall clock.
     """
     t = clamp(timeout, 1, 15)
     limit = clamp(max_bytes, 1, HTTP_GET_MAX_BYTES)
+    budget = t * HTTP_GET_BUDGET_FACTOR
+    deadline = time.monotonic() + budget
     current = _check_destination(url.strip())
     hops: list[str] = []
+
+    def check_deadline() -> None:
+        if time.monotonic() > deadline:
+            raise ToolError(f"http_get exceeded its {budget:g}s budget")
+
     try:
         with httpx.Client(follow_redirects=False, timeout=t) as client:
             for _ in range(HTTP_GET_MAX_REDIRECTS + 1):
+                check_deadline()
                 with client.stream("GET", current) as resp:
                     if resp.is_redirect and "location" in resp.headers:
                         hops.append(current)
@@ -318,6 +335,7 @@ def http_get(url: str, timeout: float = DEFAULT_TIMEOUT, max_bytes: int = HTTP_G
                     buf = bytearray()
                     if _is_textual(ctype):
                         for chunk in resp.iter_bytes(chunk_size=65536):
+                            check_deadline()
                             room = limit + 1 - len(buf)
                             buf.extend(chunk[:room])
                             if len(buf) > limit:

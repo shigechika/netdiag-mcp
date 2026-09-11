@@ -17,6 +17,7 @@ TLS証明書確認・WHOIS・ASN/GeoIP逆引きを1本にまとめています�
 | `traceroute_path` | `mtr --report`によるホップ単位の経路/損失レポート（固定サイクル、常時実行ではない） |
 | `tcp_port_check` | TCPポートの開放確認（単純なsocket接続、ポートスキャンではない） |
 | `http_check` | URLへHEAD/GETしステータス・リダイレクトチェーン・レイテンシを報告 |
+| `http_get` | URLへGETし本文を返す。テキスト系のみ（`text/*`・JSON・XML・JavaScript・YAML・`+json`/`+xml`）、上限1 MiB。ループバック・リンクローカル・クラウドのメタデータ宛先はリダイレクト経由も含めて拒否 |
 | `tls_cert_check` | ホストが提示する証明書を取得しsubject/issuer/有効期限/SANを報告 |
 | `whois_lookup` | ドメインのWHOIS参照 |
 | `asn_lookup` | Team CymruのwhoisサービスによるIPのAS番号・国コード逆引き、またはAS番号の組織情報（APIキー・GeoIP DB不要） |
@@ -29,10 +30,10 @@ TLS証明書確認・WHOIS・ASN/GeoIP逆引きを1本にまとめています�
 
 ## 設計上の注意点
 
-**3ツールは外部バイナリを一切呼びません。** `tcp_port_check`・`http_check`・
+**4ツールは外部バイナリを一切呼びません。** `tcp_port_check`・`http_check`・`http_get`・
 `tls_cert_check`はPython標準のsocket/ssl/httpxスタックを使い、`nc`/`curl`/`openssl`に
 依存しません。そのため`dig`/`ping`/`mtr`/`whois`しか入っていない（あるいは何も入っていない）
-環境でもこの3つは動作します（`health_check`が欠けているバイナリを報告するだけで、
+環境でもこの4つは動作します（`health_check`が欠けているバイナリを報告するだけで、
 サーバー全体は落ちません）。
 
 **DNS over TLS/HTTPSには新しい`dig`が必要です。** `dns_lookup`/`dnssec_check`の

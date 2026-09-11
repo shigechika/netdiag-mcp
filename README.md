@@ -31,9 +31,9 @@ scanning tool. `nmap`-style multi-host/multi-port scanning is intentionally
 out of scope; deliberately probing many hosts or ports is a different,
 higher-blast-radius action that deserves its own tooling and approval flow.
 
-`tcp_port_check`, `http_check` and `tls_cert_check` use Python's own
-socket/ssl/httpx stack rather than shelling out to `nc`/`curl`/`openssl`, so
-those three tools work even on a host with only the `dig`/`ping`/`mtr`/`whois`
+`tcp_port_check`, `http_check`, `http_get` and `tls_cert_check` use Python's
+own socket/ssl/httpx stack rather than shelling out to `nc`/`curl`/`openssl`,
+so those four tools work even on a host with only the `dig`/`ping`/`mtr`/`whois`
 binaries installed (or none of them — `health_check` reports which are
 missing without failing the whole server).
 

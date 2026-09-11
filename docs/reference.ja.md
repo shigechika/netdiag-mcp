@@ -44,6 +44,15 @@ TCPポートの開放確認——単一の`host:port`への単純なsocket接続
 
 URLへHEAD/GETしステータス・リダイレクトチェーン・レイテンシを報告。
 
+### `http_get(url, timeout=5.0, max_bytes=262144)`
+
+URLへGETしデコード済みの本文を返す。返すのはテキスト系のContent-Type（`text/*`・
+JSON・XML・JavaScript・YAML・`+json`/`+xml`）のみで、それ以外はステータス行だけを返す。
+本文は`max_bytes`（上限1 MiB）で打ち切り、切れた場合は`truncated`と明記する。
+リダイレクトは1ホップずつ（最大5回）追い、初回URLと同様に各ホップもループバック・
+リンクローカル・unspecifiedアドレス・クラウドのメタデータ宛先なら拒否する。
+呼び出し全体は`timeout * 3`の実時間で打ち切る。
+
 ### `tls_cert_check(host, port=443)`
 
 ホストが提示する証明書を取得しsubject/issuer/有効期限/SANを報告。SNIホスティング

@@ -270,6 +270,33 @@ def test_http_get_refuses_host_resolving_to_blocked_range(monkeypatch):
         tools.http_get("https://evil.example/")
 
 
+def test_http_get_refuses_ipv4_mapped_loopback(monkeypatch):
+    _mock_client(monkeypatch, lambda request: httpx.Response(200, request=request))
+    with pytest.raises(ToolError, match="blocked address"):
+        tools.http_get("http://[::ffff:127.0.0.1]/")
+    _mock_client(monkeypatch, lambda request: httpx.Response(200, request=request), resolve_to="::ffff:169.254.169.254")
+    with pytest.raises(ToolError, match="blocked address"):
+        tools.http_get("https://evil.example/")
+
+
+def test_http_get_refuses_unspecified_address(monkeypatch):
+    _mock_client(monkeypatch, lambda request: httpx.Response(200, request=request))
+    for url in ("http://0.0.0.0/", "http://[::]/"):
+        with pytest.raises(ToolError, match="blocked address"):
+            tools.http_get(url)
+
+
+def test_http_get_gives_up_when_budget_is_exhausted(monkeypatch):
+    def handler(request):
+        return httpx.Response(200, headers={"content-type": "text/plain"}, content=b"x" * 100, request=request)
+
+    _mock_client(monkeypatch, handler)
+    clock = iter([0.0, 0.0, 1000.0])  # deadline set, pre-request check, first body chunk: budget gone
+    monkeypatch.setattr(tools.time, "monotonic", lambda: next(clock, 1000.0))
+    with pytest.raises(ToolError, match="budget"):
+        tools.http_get("https://example.com/slow", timeout=1)
+
+
 def test_http_get_refuses_metadata_hostname(monkeypatch):
     _mock_client(monkeypatch, lambda request: httpx.Response(200, request=request))
     with pytest.raises(ToolError, match="blocked destination"):
