@@ -47,6 +47,16 @@ a port scan. No loop or range argument, by design.
 
 HEAD/GET a URL and report status, redirect chain, and latency.
 
+### `http_get(url, timeout=5.0, max_bytes=262144)`
+
+GET a URL and return the decoded body. Only textual content types are
+returned (`text/*`, JSON, XML, JavaScript, YAML and `+json`/`+xml` suffixes);
+anything else yields the status line only. The body is capped at `max_bytes`
+(hard ceiling 1 MiB) and marked `truncated` when cut. Redirects are followed one
+hop at a time (at most 5) and every hop, like the initial URL, is refused if it
+resolves to loopback, link-local, an unspecified address or a cloud metadata
+endpoint. The whole call is bounded by `timeout * 3` of wall clock.
+
 ### `tls_cert_check(host, port=443)`
 
 Fetch the certificate a host presents and report subject/issuer/validity/

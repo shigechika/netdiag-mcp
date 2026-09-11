@@ -16,6 +16,7 @@
 | `traceroute_path` | `mtr --report`によるホップ単位の経路/ロスレポート（固定サイクル数、連続実行ではない） |
 | `tcp_port_check` | TCPポートの開閉確認（単純なsocket connect、ポートスキャンではない） |
 | `http_check` | URLへHEAD/GETしステータス・リダイレクトチェーン・レイテンシを報告 |
+| `http_get` | URLへGETし本文を返す。テキスト系のみ（`text/*`・JSON・XML・JavaScript・YAML・`+json`/`+xml`）、上限1 MiB。ループバック・リンクローカル・クラウドのメタデータ宛先はリダイレクト経由も含めて拒否 |
 | `tls_cert_check` | 提示されたTLS証明書のsubject/issuer/有効期限/SANを報告 |
 | `whois_lookup` | ドメインのWHOIS参照 |
 | `asn_lookup` | Team CymruのwhoisサービスによるIPのASN・国コード参照、またはAS番号の組織情報参照。APIキーやGeoIP DB不要 |
@@ -24,7 +25,7 @@
 
 すべて読み取り専用・単一ターゲットのみ（バッチ/一括スイープ機能なし）です。運用者が手で打つ疎通確認コマンドの薄いラッパーという位置づけで、`nmap`的な多ホスト/多ポートへの探索は意図的にスコープ外にしています。複数対象への能動的なプローブは影響範囲が異なる別の判断・承認フローが必要な行為だからです。
 
-`tcp_port_check`・`http_check`・`tls_cert_check`はPython自身のsocket/ssl/httpxスタックを使い、`nc`/`curl`/`openssl`へシェルアウトしません。そのため`dig`/`ping`/`mtr`/`whois`のいずれかが入っていない（あるいは全く入っていない）ホストでもこの3つは動作します（`health_check`はどのバイナリが無いかを報告しますが、サーバー全体は落としません）。
+`tcp_port_check`・`http_check`・`http_get`・`tls_cert_check`はPython自身のsocket/ssl/httpxスタックを使い、`nc`/`curl`/`openssl`へシェルアウトしません。そのため`dig`/`ping`/`mtr`/`whois`のいずれかが入っていない（あるいは全く入っていない）ホストでもこの4つは動作します（`health_check`はどのバイナリが無いかを報告しますが、サーバー全体は落としません）。
 
 `dns_lookup`/`dnssec_check`は`transport="dot"`/`"doh"`でDNS over TLS・DNS over HTTPSにも対応します（digの`+tls`/`+https`）。BIND 9.18以降の`dig`が必要で、古い`dig`はこのフラグを黙って平文DNSにフォールバックせず明示的に拒否（エラー終了）します——「暗号化で確認したつもり」が実は平文だった、という誤検知を防ぐためです。
 

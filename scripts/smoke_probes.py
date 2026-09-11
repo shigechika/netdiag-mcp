@@ -67,6 +67,11 @@ PROBES: dict[str, Probe] = {
         must_match=(r"^\d{3} \S+\s+\d+ms\s+final_url=",),
         must_not_match=NO_ERROR,
     ),
+    "http_get": Probe(
+        args={"url": "https://example.com", "max_bytes": 4096},
+        must_match=(r"^\d{3} \S+\s+final_url=", r"<html"),
+        must_not_match=NO_ERROR,
+    ),
     "tls_cert_check": Probe(
         args={"host": "example.com"},
         must_match=(r"^subject: ", r"^issuer: ", r"^validity: "),
