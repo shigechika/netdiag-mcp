@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/shigechika/netdiag-mcp/compare/v0.5.0...v0.6.0) (2026-09-11)
+
+
+### Features
+
+* add http_get to return a response body ([#14](https://github.com/shigechika/netdiag-mcp/issues/14)) ([6bd0356](https://github.com/shigechika/netdiag-mcp/commit/6bd03569ceffa380d00df380bc33d6acf9ab47fd))
+
 ## [0.5.0](https://github.com/shigechika/netdiag-mcp/compare/v0.4.0...v0.5.0) (2026-09-09)
 
 
