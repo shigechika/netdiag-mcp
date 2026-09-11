@@ -198,6 +198,69 @@ def test_http_check_reports_status_and_headers(monkeypatch):
     assert "server: test-server" in result
 
 
+def _mock_client(monkeypatch, handler):
+    real_client = httpx.Client
+
+    def fake_client(*args, **kwargs):
+        kwargs["transport"] = httpx.MockTransport(handler)
+        return real_client(*args, **kwargs)
+
+    monkeypatch.setattr(tools.httpx, "Client", fake_client)
+
+
+def test_http_get_returns_json_body(monkeypatch):
+    def handler(request):
+        return httpx.Response(200, headers={"content-type": "application/json"},
+                              content=b'{"ok": true}', request=request)
+
+    _mock_client(monkeypatch, handler)
+    result = tools.http_get("https://example.com/x.json")
+    assert result.startswith("200 OK")
+    assert "content-type=application/json" in result
+    assert '{"ok": true}' in result
+
+
+def test_http_get_truncates_at_limit(monkeypatch):
+    def handler(request):
+        return httpx.Response(200, headers={"content-type": "text/plain"},
+                              content=b"a" * 5000, request=request)
+
+    _mock_client(monkeypatch, handler)
+    result = tools.http_get("https://example.com/big", max_bytes=1024)
+    assert "(truncated at 1024 bytes)" in result
+    body = result.split("\n\n", 1)[1]
+    assert len(body) == 1024
+
+
+def test_http_get_refuses_binary_body(monkeypatch):
+    def handler(request):
+        return httpx.Response(200, headers={"content-type": "application/octet-stream"},
+                              content=b"\x00\x01\x02", request=request)
+
+    _mock_client(monkeypatch, handler)
+    result = tools.http_get("https://example.com/blob")
+    assert "body not returned" in result
+    assert "\x00" not in result
+
+
+def test_http_get_accepts_structured_suffix_types(monkeypatch):
+    def handler(request):
+        return httpx.Response(200, headers={"content-type": "application/problem+json"},
+                              content=b'{"title": "x"}', request=request)
+
+    _mock_client(monkeypatch, handler)
+    assert '{"title": "x"}' in tools.http_get("https://example.com/p")
+
+
+def test_http_get_wraps_transport_errors(monkeypatch):
+    def handler(request):
+        raise httpx.ConnectError("boom", request=request)
+
+    _mock_client(monkeypatch, handler)
+    with pytest.raises(ToolError, match="HTTP request failed"):
+        tools.http_get("https://example.com")
+
+
 def test_http_check_wraps_transport_errors(monkeypatch):
     real_client = httpx.Client
 

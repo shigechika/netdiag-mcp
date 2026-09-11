@@ -102,6 +102,18 @@ def http_check(url: str, timeout: float = 5.0) -> str:
 
 
 @mcp.tool()
+def http_get(url: str, timeout: float = 5.0, max_bytes: int = 262144) -> str:
+    """GET a URL and return the response body (text/JSON/XML only, capped at max_bytes, hard cap 1 MiB).
+
+    Use this to read a JSON endpoint or inspect an error page. For status/latency
+    only, use http_check instead.
+    """
+    try:
+        return tools.http_get(url, timeout, max_bytes)
+    except (ValueError, ToolError) as e:
+        return f"error: {e}"
+
+@mcp.tool()
 def tls_cert_check(host: str, port: int = 443) -> str:
     """Fetch the TLS certificate presented on host:port and report subject/issuer/validity/SANs."""
     try:

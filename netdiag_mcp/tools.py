@@ -232,6 +232,48 @@ def http_check(url: str, timeout: float = DEFAULT_TIMEOUT) -> str:
     return "\n".join(lines)
 
 
+HTTP_GET_DEFAULT_BYTES = 256 * 1024
+HTTP_GET_MAX_BYTES = 1024 * 1024
+_TEXTUAL_TYPES = ("text/", "application/json", "application/xml", "application/javascript",
+                  "application/x-ndjson", "application/yaml", "application/x-yaml")
+
+
+def _is_textual(content_type: str) -> bool:
+    ctype = content_type.split(";", 1)[0].strip().lower()
+    if ctype.startswith(_TEXTUAL_TYPES):
+        return True
+    return ctype.endswith("+json") or ctype.endswith("+xml")
+
+
+def http_get(url: str, timeout: float = DEFAULT_TIMEOUT, max_bytes: int = HTTP_GET_DEFAULT_BYTES) -> str:
+    """GET a URL via httpx and return the decoded body (textual types only, size-capped)."""
+    t = clamp(timeout, 1, 15)
+    limit = clamp(max_bytes, 1024, HTTP_GET_MAX_BYTES)
+    try:
+        with httpx.Client(follow_redirects=True, timeout=t) as client:
+            with client.stream("GET", url) as resp:
+                ctype = resp.headers.get("content-type", "")
+                buf = bytearray()
+                if _is_textual(ctype):
+                    for chunk in resp.iter_bytes():
+                        buf.extend(chunk)
+                        if len(buf) > limit:
+                            break
+                status = f"{resp.status_code} {resp.reason_phrase}"
+                final_url = str(resp.url)
+                encoding = resp.encoding or "utf-8"
+    except httpx.HTTPError as e:
+        raise ToolError(f"HTTP request failed: {e}") from e
+    if not _is_textual(ctype):
+        return (f"{status}  final_url={final_url}  content-type={ctype or '(none)'}\n"
+                "body not returned: non-textual content type")
+    truncated = len(buf) > limit
+    body = bytes(buf[:limit]).decode(encoding, errors="replace")
+    head = f"{status}  final_url={final_url}  content-type={ctype}  bytes={min(len(buf), limit)}"
+    if truncated:
+        head += f"  (truncated at {limit} bytes)"
+    return head + "\n\n" + body
+
 def tls_cert_check(host: str, port: int = 443) -> str:
     """Native ssl/socket TLS handshake — reports the peer certificate, not raw openssl s_client text."""
     target = validate_target(host)
