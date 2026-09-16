@@ -95,6 +95,10 @@ PROBES: dict[str, Probe] = {
         # This tool answers with a dict, so a failure surfaces as an "error"
         # key rather than the "error: " prefix the text tools use.
         must_not_match=(r'"error"',),
+        # A flat dict of scalars: there is no list to count rows in, and the
+        # shape is already pinned by require_keys / must_match above. Without
+        # this the harness fails the probe with "no list-shaped data".
+        allow_empty=True,
     ),
     "asn_lookup": Probe(
         # 1.1.1.1 is Cloudflare's, stably AS13335.
