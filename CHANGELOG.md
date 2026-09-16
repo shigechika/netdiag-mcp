@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/shigechika/netdiag-mcp/compare/v0.6.0...v0.6.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* **smoke:** current_time probe must waive the row count (flat dict, no list) ([#16](https://github.com/shigechika/netdiag-mcp/issues/16)) ([9d0f06f](https://github.com/shigechika/netdiag-mcp/commit/9d0f06f16723b01dbd7c635befa58831f59f5295))
+
 ## [0.6.0](https://github.com/shigechika/netdiag-mcp/compare/v0.5.0...v0.6.0) (2026-09-11)
 
 
