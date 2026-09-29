@@ -1,13 +1,62 @@
 """netdiag-mcp — MCP Server tools."""
 
+import functools
+import inspect
 import shutil
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError as SDKToolError
+from mcp.shared.exceptions import MCPError
 
-from netdiag_mcp import tools
+from netdiag_mcp import __version__, tools
 from netdiag_mcp.tools import ToolError
 
-mcp = FastMCP("netdiag-mcp")
+
+def _expose_errors(fn):
+    """Wrap a tool so any exception reaches the model as a SDKToolError with its message.
+
+    mcp 1.x returned the exception text for every failing tool. mcp 2.x hides it
+    (the model sees only "Error executing tool <name>") unless a SDKToolError is raised.
+    """
+    if inspect.iscoroutinefunction(fn):
+
+        @functools.wraps(fn)
+        async def wrapper(*args, **kwargs):
+            try:
+                return await fn(*args, **kwargs)
+            except (SDKToolError, MCPError):
+                raise
+            except Exception as exc:
+                raise SDKToolError(str(exc) or type(exc).__name__) from exc
+
+    else:
+
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            try:
+                return fn(*args, **kwargs)
+            except (SDKToolError, MCPError):
+                raise
+            except Exception as exc:
+                raise SDKToolError(str(exc) or type(exc).__name__) from exc
+
+    return wrapper
+
+
+class _Server(MCPServer):
+    """MCPServer whose tools report their exception messages (see _expose_errors)."""
+
+    def tool(self, *args, **kwargs):
+        register = super().tool(*args, **kwargs)
+
+        def decorator(fn):
+            register(_expose_errors(fn))
+            return fn
+
+        return decorator
+
+
+mcp = _Server("netdiag-mcp", version=__version__)
 
 # health_check probes these; missing ones degrade rather than fail outright
 # so the server stays usable for whichever tools still have their binary.
@@ -23,7 +72,6 @@ def health_check() -> dict:
     "healthy" when every wrapped binary is found, "degraded" when at least
     one is missing (the corresponding tools will fail at call time).
     """
-    from netdiag_mcp import __version__
 
     binaries = {name: shutil.which(name) is not None for name in _REQUIRED_BINARIES}
     missing = [name for name, present in binaries.items() if not present]
