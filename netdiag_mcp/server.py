@@ -2,12 +2,12 @@
 
 import shutil
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
-from netdiag_mcp import tools
+from netdiag_mcp import __version__, tools
 from netdiag_mcp.tools import ToolError
 
-mcp = FastMCP("netdiag-mcp")
+mcp = MCPServer("netdiag-mcp", version=__version__)
 
 # health_check probes these; missing ones degrade rather than fail outright
 # so the server stays usable for whichever tools still have their binary.
@@ -23,7 +23,6 @@ def health_check() -> dict:
     "healthy" when every wrapped binary is found, "degraded" when at least
     one is missing (the corresponding tools will fail at call time).
     """
-    from netdiag_mcp import __version__
 
     binaries = {name: shutil.which(name) is not None for name in _REQUIRED_BINARIES}
     missing = [name for name, present in binaries.items() if not present]

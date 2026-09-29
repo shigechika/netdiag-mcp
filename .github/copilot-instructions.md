@@ -1,6 +1,6 @@
 # Copilot review instructions — netdiag-mcp
 
-This repo is a stdio MCP server ([FastMCP](https://github.com/modelcontextprotocol/python-sdk))
+This repo is a stdio MCP server ([MCPServer](https://github.com/modelcontextprotocol/python-sdk))
 wrapping `dig`/`ping`/`mtr`/`whois` and Python's own `socket`/`ssl`/`httpx`
 stack for on-demand, single-target network diagnostics. All 9 tools are
 read-only — there is no write/mutating tool in this server, and no

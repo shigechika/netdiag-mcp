@@ -20,7 +20,7 @@ uv run ruff format --check .      # format (gated in CI)
 
 ## Architecture
 
-- `netdiag_mcp/server.py` — `FastMCP("netdiag-mcp")` with 9 tools plus
+- `netdiag_mcp/server.py` — `MCPServer("netdiag-mcp")` with 9 tools plus
   `health_check`. Every tool wraps its call in `try/except (ValueError,
   ToolError)` and returns `f"error: {e}"` instead of raising.
   `_REQUIRED_BINARIES = ("dig", "ping", "mtr", "whois")` — `health_check`
