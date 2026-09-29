@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/shigechika/netdiag-mcp/compare/v0.6.1...v0.7.0) (2026-09-29)
+
+
+### Features
+
+* require mcp 2.x (MCPServer) and drop 1.x support ([#19](https://github.com/shigechika/netdiag-mcp/issues/19)) ([f983ad9](https://github.com/shigechika/netdiag-mcp/commit/f983ad9a422a532684da2962d19547b942d86e6b))
+
 ## [0.6.1](https://github.com/shigechika/netdiag-mcp/compare/v0.6.0...v0.6.1) (2026-09-16)
 
 
