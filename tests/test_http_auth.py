@@ -24,8 +24,8 @@ def _rules(mapping=None):
 
 
 def test_unset_or_empty_means_no_rules():
-    assert http_auth.load_rules({}) == []
-    assert http_auth.load_rules({http_auth.ENV_VAR: "  "}) == []
+    assert http_auth.load_rules({}) == ()
+    assert http_auth.load_rules({http_auth.ENV_VAR: "  "}) == ()
 
 
 @pytest.mark.parametrize(
@@ -44,12 +44,47 @@ def test_unset_or_empty_means_no_rules():
         json.dumps({"https:///daily/": SECRET}),
         json.dumps({"https://[broken/daily/": SECRET}),
         json.dumps({"https://[xyz]/daily/": SECRET}),
+        json.dumps({PREFIX: "Bearer secあret"}),
+        json.dumps({PREFIX: "Bearer s3cr3t\x01"}),
+        json.dumps({"https://reports.example.ac.jp/da%20ily/": SECRET}),
+        json.dumps(
+            {"https://Reports.example.ac.jp/daily/": SECRET, "https://reports.example.ac.jp:443/daily/": SECRET}
+        ),
     ],
 )
 def test_malformed_config_raises_without_echoing_the_value(raw):
     with pytest.raises(http_auth.HttpAuthConfigError) as exc:
         http_auth.load_rules({http_auth.ENV_VAR: raw})
     assert "s3cr3t" not in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    ["https://u:s3cr3t@reports.example.ac.jp/daily/", "https://reports.example.ac.jp/daily/?token=s3cr3t"],
+)
+def test_rejected_prefix_is_named_by_position_not_text(prefix):
+    with pytest.raises(http_auth.HttpAuthConfigError) as exc:
+        http_auth.load_rules(_env({PREFIX: SECRET, prefix: SECRET}))
+    assert "prefix #2" in str(exc.value)
+    assert "s3cr3t" not in str(exc.value)
+
+
+def test_duplicate_prefixes_are_rejected():
+    with pytest.raises(http_auth.HttpAuthConfigError) as exc:
+        http_auth.load_rules(
+            _env(
+                {
+                    "https://REPORTS.example.ac.jp./daily/": "Bearer a",
+                    "https://reports.example.ac.jp:443/daily/": "Bearer b",
+                }
+            )
+        )
+    assert "prefix #2 is the same prefix as prefix #1" in str(exc.value)
+
+
+def test_prefixes_are_reported_in_canonical_form():
+    rules = _rules({"https://REPORTS.example.ac.jp:443/daily/": SECRET, "https://[2001:db8::1]:8443/x/": SECRET})
+    assert sorted(r.prefix for r in rules) == ["https://[2001:db8::1]:8443/x/", PREFIX]
 
 
 # --- matching ---
@@ -83,6 +118,11 @@ def test_matching_urls_get_the_header(url):
         "https://reports.example.ac.jp/daily/%2e%2e/other/x.json",
         "https://evil.example/daily/x.json",
         "https://[broken/daily/x.json",
+        "https://reports.example.ac.jp/daily/..;/admin",
+        "https://reports.example.ac.jp/daily/%252e%252e/admin",
+        "https://reports.example.ac.jp/daily/..%00/admin",
+        "https://reports.example.ac.jp/daily/a;b/x.json",
+        "https://reports.example.ac.jp/daily/a\\..\\x",
     ],
 )
 def test_non_matching_urls_get_nothing(url):
@@ -166,6 +206,25 @@ def test_http_get_keeps_header_on_same_prefix_redirect(monkeypatch):
     out = tools.http_get(PREFIX + "latest.json")
     assert seen == [("/daily/latest.json", SECRET), ("/daily/2026-10-12.json", SECRET)]
     assert "auth=applied" in out
+
+
+def test_http_get_does_not_carry_cookies_across_hops(monkeypatch):
+    monkeypatch.setenv(http_auth.ENV_VAR, json.dumps({PREFIX: SECRET}))
+    seen = []
+
+    def handler(request):
+        seen.append((str(request.url), request.headers.get("cookie"), request.headers.get("authorization")))
+        if request.url.path.startswith("/daily/"):
+            return httpx.Response(
+                302,
+                headers={"location": "https://reports.example.ac.jp/other", "set-cookie": "SESSION=s3cr3t; Path=/"},
+                request=request,
+            )
+        return httpx.Response(200, headers={"content-type": "text/plain"}, content=b"ok", request=request)
+
+    _mock_client(monkeypatch, handler)
+    tools.http_get(PREFIX + "a.json")
+    assert seen[1] == ("https://reports.example.ac.jp/other", None, None)
 
 
 def test_http_get_fails_loudly_on_malformed_config(monkeypatch):

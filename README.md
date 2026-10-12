@@ -117,11 +117,18 @@ NETDIAG_HTTP_AUTH='{"https://reports.example.ac.jp/daily/": "Bearer <token>"}'
 
 - The header is chosen per request and per redirect hop by comparing the parsed
   URL (https only, exact host and port, path prefix on a `/` boundary). A
-  redirect to anywhere else drops it; `user@host` URLs and `..` segments never
-  match. The longest matching prefix wins.
-- The value never appears in tool output, errors or `health_check`; the result's
-  status line says `auth=applied` when the final hop carried it.
-  `health_check` lists the configured prefixes (not the values).
+  redirect to anywhere else drops it, and no cookie carries over between hops.
+  `user@host` URLs never match, and neither does a path with anything beyond
+  letters, digits, `.`, `_`, `~`, `-` and `/` (no `%`, `;` or `.`/`..`
+  segments), so a server cannot normalise a matched URL out of the prefix. The
+  longest matching prefix wins; two prefixes that differ only in case, `:443` or
+  a trailing dot are rejected as duplicates. Values must be printable ASCII.
+- netdiag-mcp never puts the value into its own output, errors or
+  `health_check`; the result's status line says `auth=applied` when the final
+  hop carried it, and `health_check` lists the configured prefixes in canonical
+  form (not the values). Errors name a bad prefix by position, not by text. The
+  response body is returned as-is, so point a prefix only at endpoints you
+  control: one that echoes request headers would reveal the token.
 - A malformed value fails loudly: `http_get` returns an error and
   `health_check` reports `degraded`.
 - It is read from the environment only. If several instances run as the same
@@ -145,8 +152,9 @@ netdiag-mcp --check     # report which wrapped binaries are present (exit 0 when
   other tool-calling surface.
 - `tcp_port_check` connects to exactly one host:port per call; there is no
   loop or range argument, by design.
-- The optional `http_get` credential never leaves the configured https origin
-  and is never shown to the model (see above).
+- The optional `http_get` credential never leaves the configured https prefix
+  and netdiag-mcp never prints it; a response body that echoes it is the
+  server's doing (see above).
 
 ## Development
 

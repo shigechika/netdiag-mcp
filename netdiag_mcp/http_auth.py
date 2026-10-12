@@ -19,63 +19,81 @@ all of them, while each instance's environment is its own.
 
 from __future__ import annotations
 
+import functools
 import json
 import os
+import re
 import urllib.parse
 from dataclasses import dataclass
 
 ENV_VAR = "NETDIAG_HTTP_AUTH"
 
+# A path that can carry the header: unreserved characters and "/" only. No "%"
+# (no encoded dot segments, double-encoding or NUL), no ";" (no "..;" matrix
+# parameters) and no "\\". Report URLs never need more; anything else is sent
+# without the header rather than risk a server normalising it out of the prefix.
+_SAFE_PATH = re.compile(r"^/[A-Za-z0-9._~/-]*$")
+
 
 class HttpAuthConfigError(ValueError):
-    """NETDIAG_HTTP_AUTH is set but malformed. The message never contains a header value."""
+    """NETDIAG_HTTP_AUTH is set but malformed. The message never contains a header value or a raw prefix."""
 
 
 @dataclass(frozen=True)
 class Rule:
-    prefix: str
+    prefix: str  # canonical https://host[:port]/path, safe to show
     host: str
     port: int
     path: str
     value: str
 
 
-def _has_dot_segment(path: str) -> bool:
-    decoded = urllib.parse.unquote(path)
-    return any(seg in (".", "..") for seg in decoded.replace("\\", "/").split("/"))
+def _safe_path(path: str) -> bool:
+    return bool(_SAFE_PATH.match(path)) and not any(seg in (".", "..") for seg in path.split("/"))
 
 
-def _parse_prefix(prefix: str) -> tuple[str, int, str]:
+def _canonical(host: str, port: int, path: str) -> str:
+    netloc = host if port == 443 else f"{host}:{port}"
+    if ":" in host:  # IPv6 literal
+        netloc = f"[{host}]" if port == 443 else f"[{host}]:{port}"
+    return f"https://{netloc}{path}"
+
+
+def _parse_prefix(prefix: str, label: str) -> tuple[str, int, str]:
+    # Errors name the prefix by position only: a rejected prefix may hold a
+    # secret (user info, a query token) and health_check is shown to the model.
     try:
         parts = urllib.parse.urlsplit(prefix)
         hostname = parts.hostname
-    except ValueError as e:  # e.g. malformed IPv6 brackets
-        raise HttpAuthConfigError(f"{ENV_VAR}: prefix {prefix!r} is not a valid URL") from e
-    if parts.scheme != "https":
-        raise HttpAuthConfigError(f"{ENV_VAR}: prefix {prefix!r} must start with https://")
-    if parts.username is not None or parts.password is not None:
-        raise HttpAuthConfigError(f"{ENV_VAR}: prefix {prefix!r} must not contain user info")
-    if parts.query or parts.fragment:
-        raise HttpAuthConfigError(f"{ENV_VAR}: prefix {prefix!r} must not contain a query or fragment")
-    if not hostname:
-        raise HttpAuthConfigError(f"{ENV_VAR}: prefix {prefix!r} has no host")
-    try:
         port = parts.port or 443
-    except ValueError as e:
-        raise HttpAuthConfigError(f"{ENV_VAR}: prefix {prefix!r} has an invalid port") from e
+    except ValueError as e:  # malformed IPv6 brackets, bad port
+        raise HttpAuthConfigError(f"{ENV_VAR}: {label} is not a valid URL") from e
+    if parts.scheme != "https":
+        raise HttpAuthConfigError(f"{ENV_VAR}: {label} must start with https://")
+    if parts.username is not None or parts.password is not None:
+        raise HttpAuthConfigError(f"{ENV_VAR}: {label} must not contain user info")
+    if parts.query or parts.fragment:
+        raise HttpAuthConfigError(f"{ENV_VAR}: {label} must not contain a query or fragment")
+    if not hostname:
+        raise HttpAuthConfigError(f"{ENV_VAR}: {label} has no host")
     path = parts.path or "/"
     if not path.endswith("/"):
-        raise HttpAuthConfigError(f"{ENV_VAR}: prefix {prefix!r} must end with /")
-    if _has_dot_segment(path):
-        raise HttpAuthConfigError(f"{ENV_VAR}: prefix {prefix!r} must not contain . or .. segments")
+        raise HttpAuthConfigError(f"{ENV_VAR}: {label} must end with /")
+    if not _safe_path(path):
+        raise HttpAuthConfigError(
+            f"{ENV_VAR}: {label} path may only use letters, digits, '.', '_', '~', '-' and '/' (no . or .. segments)"
+        )
     return hostname.lower().rstrip("."), port, path
 
 
-def load_rules(environ: dict[str, str] | None = None) -> list[Rule]:
-    """Parse NETDIAG_HTTP_AUTH. Unset or empty means no rules; anything malformed raises."""
-    raw = (environ if environ is not None else os.environ).get(ENV_VAR, "").strip()
-    if not raw:
-        return []
+def _valid_value(value: str) -> bool:
+    # Printable ASCII only: httpx encodes header values as ASCII, and an error
+    # raised at send time would quote the offending character and its position.
+    return bool(value) and all(0x20 <= ord(c) <= 0x7E for c in value)
+
+
+@functools.lru_cache(maxsize=4)
+def _parse(raw: str) -> tuple[Rule, ...]:
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as e:
@@ -84,38 +102,50 @@ def load_rules(environ: dict[str, str] | None = None) -> list[Rule]:
     if not isinstance(data, dict):
         raise HttpAuthConfigError(f"{ENV_VAR}: must be a JSON object mapping URL prefix to header value")
     rules = []
-    for prefix, value in data.items():
-        if not isinstance(value, str) or not value.strip():
-            raise HttpAuthConfigError(f"{ENV_VAR}: value for {prefix!r} must be a non-empty string")
-        if any(c in value for c in "\r\n\0"):
-            raise HttpAuthConfigError(f"{ENV_VAR}: value for {prefix!r} contains a control character")
-        host, port, path = _parse_prefix(prefix)
-        rules.append(Rule(prefix=prefix, host=host, port=port, path=path, value=value.strip()))
+    seen: dict[tuple[str, int, str], str] = {}
+    for i, (prefix, value) in enumerate(data.items(), start=1):
+        label = f"prefix #{i}"
+        if not isinstance(value, str) or not _valid_value(value.strip()):
+            raise HttpAuthConfigError(f"{ENV_VAR}: value for {label} must be a non-empty printable ASCII string")
+        host, port, path = _parse_prefix(prefix, label)
+        key = (host, port, path)
+        if key in seen:
+            raise HttpAuthConfigError(f"{ENV_VAR}: {label} is the same prefix as {seen[key]}")
+        seen[key] = label
+        rules.append(Rule(prefix=_canonical(host, port, path), host=host, port=port, path=path, value=value.strip()))
     # The most specific prefix wins when several match.
     rules.sort(key=lambda r: len(r.path), reverse=True)
-    return rules
+    return tuple(rules)
 
 
-def header_for(url: str, rules: list[Rule]) -> dict[str, str]:
+def load_rules(environ: dict[str, str] | None = None) -> tuple[Rule, ...]:
+    """Parse NETDIAG_HTTP_AUTH. Unset or empty means no rules; anything malformed raises.
+
+    The parse is cached per distinct value, so repeated calls cost a dict lookup.
+    """
+    raw = (environ if environ is not None else os.environ).get(ENV_VAR, "").strip()
+    if not raw:
+        return ()
+    return _parse(raw)
+
+
+def header_for(url: str, rules: tuple[Rule, ...]) -> dict[str, str]:
     """The Authorization header for url, or {} when no rule matches it."""
     if not rules:
         return {}
     try:
         parts = urllib.parse.urlsplit(url)
         hostname = parts.hostname
+        port = parts.port or 443
     except ValueError:
         return {}
     if parts.scheme != "https" or not hostname:
         return {}
     if parts.username is not None or parts.password is not None:
         return {}
-    try:
-        port = parts.port or 443
-    except ValueError:
-        return {}
     host = hostname.lower().rstrip(".")
     path = parts.path or "/"
-    if _has_dot_segment(path):
+    if not _safe_path(path):
         return {}
     for rule in rules:
         if rule.host == host and rule.port == port and path.startswith(rule.path):

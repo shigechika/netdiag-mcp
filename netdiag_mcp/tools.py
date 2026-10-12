@@ -334,6 +334,9 @@ def http_get(url: str, timeout: float = DEFAULT_TIMEOUT, max_bytes: int = HTTP_G
         with httpx.Client(follow_redirects=False, timeout=t) as client:
             for _ in range(HTTP_GET_MAX_REDIRECTS + 1):
                 check_deadline()
+                # No cookie carries over between hops: a session cookie set by an
+                # authenticated hop must not follow a redirect out of the prefix.
+                client.cookies.clear()
                 headers = http_auth.header_for(current, rules)
                 authed = bool(headers)
                 with client.stream("GET", current, headers=headers) as resp:
