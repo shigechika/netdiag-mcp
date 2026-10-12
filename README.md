@@ -104,11 +104,45 @@ claude mcp add netdiag -- netdiag-mcp
 
 No environment variables are required.
 
+## Optional: credentials for `http_get`
+
+`http_get` can send an `Authorization` header to URLs under a configured https
+prefix, for reading a protected JSON endpoint without handing the credential to
+the model. Set `NETDIAG_HTTP_AUTH` to a JSON object mapping prefix to header
+value:
+
+```bash
+NETDIAG_HTTP_AUTH='{"https://reports.example.ac.jp/daily/": "Bearer <token>"}'
+```
+
+- The header is chosen per request and per redirect hop by comparing the parsed
+  URL (https only, exact host and port, path prefix on a `/` boundary). A
+  redirect to anywhere else drops it, along with any cookie set while it was
+  attached.
+  `user@host` URLs never match, and neither does a path with anything beyond
+  letters, digits, `.`, `_`, `~`, `-` and `/` (no `%`, `;` or `.`/`..`
+  segments), so a server cannot normalise a matched URL out of the prefix. The
+  longest matching prefix wins; two prefixes that differ only in case, `:443` or
+  a trailing dot are rejected as duplicates. Values must be printable ASCII.
+- netdiag-mcp never puts the value into its own output, errors or
+  `health_check`; the result's status line says `auth=applied` when the final
+  hop carried it, and `health_check` lists the configured prefixes in canonical
+  form (not the values). Errors name a bad prefix by position, not by text. A
+  response body under the prefix has the value (and its token part) masked as
+  `[redacted]`, but an endpoint that transforms it (for example base64) would
+  still reveal it, so point a prefix only at endpoints you control.
+- A malformed value fails loudly: `http_get` returns an error and
+  `health_check` reports `degraded`.
+- It is read from the environment only. If several instances run as the same
+  user (for example one open to many users and one restricted), set it only in
+  the environment of the instance that should send it — a file would be shared
+  by all of them.
+
 ## CLI
 
 ```bash
 netdiag-mcp --version   # print version
-netdiag-mcp --check     # report which wrapped binaries are present (exit 0 when all are)
+netdiag-mcp --check     # report missing binaries and a malformed NETDIAG_HTTP_AUTH (exit 0 when all binaries are present and the setting, if any, parses)
 ```
 
 ## Security notes
@@ -120,6 +154,9 @@ netdiag-mcp --check     # report which wrapped binaries are present (exit 0 when
   other tool-calling surface.
 - `tcp_port_check` connects to exactly one host:port per call; there is no
   loop or range argument, by design.
+- The optional `http_get` credential never leaves the configured https prefix
+  and netdiag-mcp never prints it; a response body that echoes it is the
+  server's doing (see above).
 
 ## Development
 

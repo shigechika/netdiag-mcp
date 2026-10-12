@@ -4,10 +4,12 @@
 
 ### `health_check`
 
-No parameters. Returns `{status, service, version, binaries, missing}`.
-`status` is `"healthy"` when `dig`/`ping`/`mtr`/`whois` are all on PATH,
-`"degraded"` when at least one is missing — the corresponding tools fail at
-call time, but the server itself keeps running.
+No parameters. Returns `{status, service, version, binaries, missing, http_auth}`.
+`status` is `"healthy"` when `dig`/`ping`/`mtr`/`whois` are all on PATH and
+`NETDIAG_HTTP_AUTH` (if set) parses, `"degraded"` otherwise — the affected
+tools fail at call time, but the server itself keeps running. `http_auth` is
+`{prefixes, error}`: the configured URL prefixes (never the header values) and
+the parse error, if any.
 
 ### `dns_lookup(hostname, record_type="A", resolver=None, transport="plain")`
 
@@ -57,6 +59,10 @@ hop at a time (at most 5) and every hop, like the initial URL, is refused if it
 resolves to loopback, link-local, an unspecified address or a cloud metadata
 endpoint. The whole call is bounded by `timeout * 3` of wall clock.
 
+With `NETDIAG_HTTP_AUTH` set, each hop under a configured https prefix is sent
+with that prefix's `Authorization` header, decided per hop (see the README).
+The status line then ends with `auth=applied`; the value is never returned.
+
 ### `tls_cert_check(host, port=443)`
 
 Fetch the certificate a host presents and report subject/issuer/validity/
@@ -99,10 +105,11 @@ their failure carries an `"error"` key instead.
 
 ```bash
 netdiag-mcp --version   # print version
-netdiag-mcp --check     # report which wrapped binaries are present (exit 0 when all are)
+netdiag-mcp --check     # report missing binaries and a malformed NETDIAG_HTTP_AUTH (exit 0 when neither)
 ```
 
-`--check` exits non-zero if any of `dig`/`ping`/`mtr`/`whois` is missing —
+`--check` exits non-zero if any of `dig`/`ping`/`mtr`/`whois` is missing or
+`NETDIAG_HTTP_AUTH` is set but malformed —
 useful in a deploy script to fail fast before the server would otherwise
 degrade silently.
 

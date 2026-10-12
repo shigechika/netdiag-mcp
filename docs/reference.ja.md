@@ -4,9 +4,11 @@
 
 ### `health_check`
 
-引数なし。`{status, service, version, binaries, missing}`を返す。`status`は
-`dig`/`ping`/`mtr`/`whois`が全てPATH上にあれば`"healthy"`、1つでも欠けていれば
-`"degraded"`（該当ツールは呼び出し時にエラーになるが、サーバー自体は起動し続ける）。
+引数なし。`{status, service, version, binaries, missing, http_auth}`を返す。`status`は
+`dig`/`ping`/`mtr`/`whois`が全てPATH上にあり、`NETDIAG_HTTP_AUTH`（設定していれば）が
+正しく読めれば`"healthy"`、そうでなければ`"degraded"`（該当ツールは呼び出し時にエラーになるが、
+サーバー自体は起動し続ける）。`http_auth`は`{prefixes, error}`で、設定したURL前方一致（ヘッダ値は
+出さない）と、読めなかったときの理由。
 
 ### `dns_lookup(hostname, record_type="A", resolver=None, transport="plain")`
 
@@ -53,6 +55,10 @@ JSON・XML・JavaScript・YAML・`+json`/`+xml`）のみで、それ以外はス
 リンクローカル・unspecifiedアドレス・クラウドのメタデータ宛先なら拒否する。
 呼び出し全体は`timeout * 3`の実時間で打ち切る。
 
+`NETDIAG_HTTP_AUTH`を設定すると、設定したhttpsの前方一致の下にあるホップには、その前方一致の
+`Authorization`ヘッダをホップごとに判定して付ける（READMEを参照）。そのときステータス行の末尾に
+`auth=applied`と出る。値は返さない。
+
 ### `tls_cert_check(host, port=443)`
 
 ホストが提示する証明書を取得しsubject/issuer/有効期限/SANを報告。SNIホスティング
@@ -91,10 +97,10 @@ AS番号のみ受け付ける（ホスト名は不可、名前しか無い場合
 
 ```bash
 netdiag-mcp --version   # バージョン表示
-netdiag-mcp --check     # ラップしているバイナリの有無を報告（全て揃っていれば終了コード0）
+netdiag-mcp --check     # バイナリの欠けとNETDIAG_HTTP_AUTHの不正を報告（どちらも無ければ終了コード0）
 ```
 
-`--check`は`dig`/`ping`/`mtr`/`whois`のいずれかが欠けていると非0で終了する——
+`--check`は`dig`/`ping`/`mtr`/`whois`のいずれかが欠けているか、`NETDIAG_HTTP_AUTH`を設定していて読めないと非0で終了する——
 デプロイスクリプトで、サーバーが静かに劣化する前に早期失敗させるのに使える。
 
 ## セキュリティ上の注意点

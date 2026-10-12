@@ -7,7 +7,7 @@ MCP server wrapping `dig`/`ping`/`mtr`/`whois` and Python's own
 diagnostics (DNS, ping, traceroute, TCP port checks, HTTP, TLS certs,
 WHOIS, ASN/GeoIP lookups). Transport is stdio only. All 9 tools are
 read-only — there is no write/mutating tool, no config file, and no
-environment variable required.
+environment variable required (`NETDIAG_HTTP_AUTH` is optional).
 
 ## Commands
 
@@ -48,8 +48,12 @@ uv run ruff format --check .      # format (gated in CI)
 
 ## Conventions
 
-- No credential store, no config file, no environment variables — every
-  tool call is self-contained.
+- No credential store and no config file. The only environment variable is
+  the optional `NETDIAG_HTTP_AUTH` (`netdiag_mcp/http_auth.py`): an https URL
+  prefix → `Authorization` value map that `http_get` applies per redirect hop
+  after comparing parsed scheme/host/port/path. Never return, log or put the
+  value into an error; `health_check` lists prefixes only. Environment only (no
+  file), because several instances may run as one user with different access.
 - Tests use `mcp.client.stdio.stdio_client` + `mcp.ClientSession` to
   exercise the real MCP protocol (spawns the actual binary, calls
   `list_tools()`/`call_tool()`) in addition to plain unit tests that call
