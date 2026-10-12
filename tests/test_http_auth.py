@@ -226,6 +226,24 @@ def test_http_get_keeps_cookies_on_ordinary_redirects(monkeypatch):
     assert seen == [None, "SESSION=x"]
 
 
+def test_http_get_clears_cookies_between_prefixes_with_the_same_value(monkeypatch):
+    other = "https://reports.example.ac.jp/other/"
+    monkeypatch.setenv(http_auth.ENV_VAR, json.dumps({PREFIX: SECRET, other: SECRET}))
+    seen = []
+
+    def handler(request):
+        seen.append((request.url.path, request.headers.get("cookie")))
+        if request.url.path.startswith("/daily/"):
+            return httpx.Response(
+                302, headers={"location": other + "page", "set-cookie": "SESSION=private; Path=/"}, request=request
+            )
+        return httpx.Response(200, headers={"content-type": "text/plain"}, content=b"ok", request=request)
+
+    _mock_client(monkeypatch, handler)
+    tools.http_get(PREFIX + "start")
+    assert seen == [("/daily/start", None), ("/other/page", None)]
+
+
 def test_http_get_redacts_an_echoed_credential(monkeypatch):
     monkeypatch.setenv(http_auth.ENV_VAR, json.dumps({PREFIX: SECRET}))
 

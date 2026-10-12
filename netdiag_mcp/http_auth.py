@@ -129,28 +129,34 @@ def load_rules(environ: dict[str, str] | None = None) -> tuple[Rule, ...]:
     return _parse(raw)
 
 
-def header_for(url: str, rules: tuple[Rule, ...]) -> dict[str, str]:
-    """The Authorization header for url, or {} when no rule matches it."""
+def match(url: str, rules: tuple[Rule, ...]) -> Rule | None:
+    """The rule whose prefix url falls under (longest first), or None."""
     if not rules:
-        return {}
+        return None
     try:
         parts = urllib.parse.urlsplit(url)
         hostname = parts.hostname
         port = parts.port or 443
     except ValueError:
-        return {}
+        return None
     if parts.scheme != "https" or not hostname:
-        return {}
+        return None
     if parts.username is not None or parts.password is not None:
-        return {}
+        return None
     host = hostname.lower().rstrip(".")
     path = parts.path or "/"
     if not _safe_path(path):
-        return {}
+        return None
     for rule in rules:
         if rule.host == host and rule.port == port and path.startswith(rule.path):
-            return {"Authorization": rule.value}
-    return {}
+            return rule
+    return None
+
+
+def header_for(url: str, rules: tuple[Rule, ...]) -> dict[str, str]:
+    """The Authorization header for url, or {} when no rule matches it."""
+    rule = match(url, rules)
+    return {"Authorization": rule.value} if rule else {}
 
 
 REDACTED = "[redacted]"

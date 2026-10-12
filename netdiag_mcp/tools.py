@@ -325,7 +325,7 @@ def http_get(url: str, timeout: float = DEFAULT_TIMEOUT, max_bytes: int = HTTP_G
     current = _check_destination(url.strip())
     hops: list[str] = []
     authed = False
-    prev_headers: dict[str, str] = {}
+    prev_rule: http_auth.Rule | None = None
 
     def check_deadline() -> None:
         if time.monotonic() > deadline:
@@ -335,13 +335,15 @@ def http_get(url: str, timeout: float = DEFAULT_TIMEOUT, max_bytes: int = HTTP_G
         with httpx.Client(follow_redirects=False, timeout=t) as client:
             for _ in range(HTTP_GET_MAX_REDIRECTS + 1):
                 check_deadline()
-                headers = http_auth.header_for(current, rules)
+                rule = http_auth.match(current, rules)
                 # A cookie set while a credential was attached must not follow a
-                # redirect out of that scope; ordinary redirects keep their cookies.
-                if prev_headers and headers != prev_headers:
+                # redirect out of that prefix (even into another prefix with the
+                # same value); ordinary redirects keep their cookies.
+                if prev_rule is not None and rule != prev_rule:
                     client.cookies.clear()
-                prev_headers = headers
-                authed = bool(headers)
+                prev_rule = rule
+                authed = rule is not None
+                headers = {"Authorization": rule.value} if rule else {}
                 with client.stream("GET", current, headers=headers) as resp:
                     if resp.is_redirect and "location" in resp.headers:
                         hops.append(current)
@@ -381,7 +383,7 @@ def http_get(url: str, timeout: float = DEFAULT_TIMEOUT, max_bytes: int = HTTP_G
     if truncated:
         head += f"  (truncated at {limit} bytes)"
     if authed:
-        body = http_auth.redact(body, prev_headers)
+        body = http_auth.redact(body, {"Authorization": prev_rule.value} if prev_rule else {})
     return head + "\n\n" + body
 
 
