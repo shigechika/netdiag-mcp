@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/shigechika/netdiag-mcp/compare/v0.7.0...v0.8.0) (2026-10-12)
+
+
+### Features
+
+* optional per-prefix Authorization header for http_get (NETDIAG_HTTP_AUTH) ([#22](https://github.com/shigechika/netdiag-mcp/issues/22)) ([3529eda](https://github.com/shigechika/netdiag-mcp/commit/3529eda02d29ef09123c038da96a527d5fc1effc))
+
 ## [0.7.0](https://github.com/shigechika/netdiag-mcp/compare/v0.6.1...v0.7.0) (2026-09-29)
 
 
