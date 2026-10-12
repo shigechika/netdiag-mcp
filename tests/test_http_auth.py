@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 
@@ -276,7 +277,8 @@ def test_health_check_unset(monkeypatch):
 
 def test_cli_check_reports_malformed_config_from_the_environment():
     """End to end: the variable reaches the process the way a unit's EnvironmentFile delivers it."""
-    env = {"PATH": "/usr/bin:/bin", http_auth.ENV_VAR: '{"http://reports.example.ac.jp/daily/": "' + SECRET + '"}'}
+    # Inherit the environment (Windows needs SYSTEMROOT for sockets) and override the variable.
+    env = {**os.environ, http_auth.ENV_VAR: '{"http://reports.example.ac.jp/daily/": "' + SECRET + '"}'}
     proc = subprocess.run(
         [sys.executable, "-m", "netdiag_mcp", "--check"], capture_output=True, text=True, env=env, timeout=60
     )
