@@ -42,6 +42,8 @@ def test_unset_or_empty_means_no_rules():
         json.dumps({"https://reports.example.ac.jp/daily/?a=1": SECRET}),
         json.dumps({"https://reports.example.ac.jp/a/../daily/": SECRET}),
         json.dumps({"https:///daily/": SECRET}),
+        json.dumps({"https://[broken/daily/": SECRET}),
+        json.dumps({"https://[xyz]/daily/": SECRET}),
     ],
 )
 def test_malformed_config_raises_without_echoing_the_value(raw):
@@ -80,6 +82,7 @@ def test_matching_urls_get_the_header(url):
         "https://reports.example.ac.jp/daily/../other/x.json",
         "https://reports.example.ac.jp/daily/%2e%2e/other/x.json",
         "https://evil.example/daily/x.json",
+        "https://[broken/daily/x.json",
     ],
 )
 def test_non_matching_urls_get_nothing(url):
@@ -194,6 +197,15 @@ def test_health_check_degraded_on_malformed_config(monkeypatch):
     assert result["status"] == "degraded"
     assert result["http_auth"]["prefixes"] == []
     assert result["http_auth"]["error"]
+    assert "s3cr3t" not in json.dumps(result)
+
+
+def test_health_check_degraded_on_unparsable_prefix(monkeypatch):
+    monkeypatch.setattr(server.shutil, "which", lambda _: "/usr/bin/x")
+    monkeypatch.setenv(http_auth.ENV_VAR, json.dumps({"https://[broken/daily/": SECRET}))
+    result = server.health_check()
+    assert result["status"] == "degraded"
+    assert "not a valid URL" in result["http_auth"]["error"]
     assert "s3cr3t" not in json.dumps(result)
 
 

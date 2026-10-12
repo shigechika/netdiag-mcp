@@ -46,14 +46,18 @@ def _has_dot_segment(path: str) -> bool:
 
 
 def _parse_prefix(prefix: str) -> tuple[str, int, str]:
-    parts = urllib.parse.urlsplit(prefix)
+    try:
+        parts = urllib.parse.urlsplit(prefix)
+        hostname = parts.hostname
+    except ValueError as e:  # e.g. malformed IPv6 brackets
+        raise HttpAuthConfigError(f"{ENV_VAR}: prefix {prefix!r} is not a valid URL") from e
     if parts.scheme != "https":
         raise HttpAuthConfigError(f"{ENV_VAR}: prefix {prefix!r} must start with https://")
     if parts.username is not None or parts.password is not None:
         raise HttpAuthConfigError(f"{ENV_VAR}: prefix {prefix!r} must not contain user info")
     if parts.query or parts.fragment:
         raise HttpAuthConfigError(f"{ENV_VAR}: prefix {prefix!r} must not contain a query or fragment")
-    if not parts.hostname:
+    if not hostname:
         raise HttpAuthConfigError(f"{ENV_VAR}: prefix {prefix!r} has no host")
     try:
         port = parts.port or 443
@@ -64,7 +68,7 @@ def _parse_prefix(prefix: str) -> tuple[str, int, str]:
         raise HttpAuthConfigError(f"{ENV_VAR}: prefix {prefix!r} must end with /")
     if _has_dot_segment(path):
         raise HttpAuthConfigError(f"{ENV_VAR}: prefix {prefix!r} must not contain . or .. segments")
-    return parts.hostname.lower().rstrip("."), port, path
+    return hostname.lower().rstrip("."), port, path
 
 
 def load_rules(environ: dict[str, str] | None = None) -> list[Rule]:
@@ -96,8 +100,12 @@ def header_for(url: str, rules: list[Rule]) -> dict[str, str]:
     """The Authorization header for url, or {} when no rule matches it."""
     if not rules:
         return {}
-    parts = urllib.parse.urlsplit(url)
-    if parts.scheme != "https" or not parts.hostname:
+    try:
+        parts = urllib.parse.urlsplit(url)
+        hostname = parts.hostname
+    except ValueError:
+        return {}
+    if parts.scheme != "https" or not hostname:
         return {}
     if parts.username is not None or parts.password is not None:
         return {}
@@ -105,7 +113,7 @@ def header_for(url: str, rules: list[Rule]) -> dict[str, str]:
         port = parts.port or 443
     except ValueError:
         return {}
-    host = parts.hostname.lower().rstrip(".")
+    host = hostname.lower().rstrip(".")
     path = parts.path or "/"
     if _has_dot_segment(path):
         return {}
