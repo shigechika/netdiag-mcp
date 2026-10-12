@@ -209,6 +209,41 @@ def test_http_get_keeps_header_on_same_prefix_redirect(monkeypatch):
     assert "auth=applied" in out
 
 
+def test_http_get_keeps_cookies_on_ordinary_redirects(monkeypatch):
+    monkeypatch.delenv(http_auth.ENV_VAR, raising=False)
+    seen = []
+
+    def handler(request):
+        seen.append(request.headers.get("cookie"))
+        if request.url.path == "/login":
+            return httpx.Response(
+                302, headers={"location": "/page", "set-cookie": "SESSION=x; Path=/"}, request=request
+            )
+        return httpx.Response(200, headers={"content-type": "text/plain"}, content=b"ok", request=request)
+
+    _mock_client(monkeypatch, handler)
+    tools.http_get("https://example.com/login")
+    assert seen == [None, "SESSION=x"]
+
+
+def test_http_get_redacts_an_echoed_credential(monkeypatch):
+    monkeypatch.setenv(http_auth.ENV_VAR, json.dumps({PREFIX: SECRET}))
+
+    def handler(request):
+        body = json.dumps({"headers": {"Authorization": request.headers.get("authorization")}})
+        return httpx.Response(200, headers={"content-type": "application/json"}, content=body.encode(), request=request)
+
+    _mock_client(monkeypatch, handler)
+    out = tools.http_get(PREFIX + "headers")
+    assert "s3cr3t" not in out
+    assert "[redacted]" in out
+
+
+def test_redact_masks_the_token_part_too():
+    assert http_auth.redact("token=s3cr3t-token-value", {"Authorization": SECRET}) == "token=[redacted]"
+    assert http_auth.redact("nothing here", {}) == "nothing here"
+
+
 def test_http_get_does_not_carry_cookies_across_hops(monkeypatch):
     monkeypatch.setenv(http_auth.ENV_VAR, json.dumps({PREFIX: SECRET}))
     seen = []

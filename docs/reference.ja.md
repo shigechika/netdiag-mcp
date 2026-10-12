@@ -97,10 +97,10 @@ AS番号のみ受け付ける（ホスト名は不可、名前しか無い場合
 
 ```bash
 netdiag-mcp --version   # バージョン表示
-netdiag-mcp --check     # ラップしているバイナリの有無を報告（全て揃っていれば終了コード0）
+netdiag-mcp --check     # バイナリの欠けとNETDIAG_HTTP_AUTHの不正を報告（どちらも無ければ終了コード0）
 ```
 
-`--check`は`dig`/`ping`/`mtr`/`whois`のいずれかが欠けていると非0で終了する——
+`--check`は`dig`/`ping`/`mtr`/`whois`のいずれかが欠けているか、`NETDIAG_HTTP_AUTH`を設定していて読めないと非0で終了する——
 デプロイスクリプトで、サーバーが静かに劣化する前に早期失敗させるのに使える。
 
 ## セキュリティ上の注意点

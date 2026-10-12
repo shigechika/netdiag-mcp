@@ -105,10 +105,11 @@ their failure carries an `"error"` key instead.
 
 ```bash
 netdiag-mcp --version   # print version
-netdiag-mcp --check     # report which wrapped binaries are present (exit 0 when all are)
+netdiag-mcp --check     # report missing binaries and a malformed NETDIAG_HTTP_AUTH (exit 0 when neither)
 ```
 
-`--check` exits non-zero if any of `dig`/`ping`/`mtr`/`whois` is missing —
+`--check` exits non-zero if any of `dig`/`ping`/`mtr`/`whois` is missing or
+`NETDIAG_HTTP_AUTH` is set but malformed —
 useful in a deploy script to fail fast before the server would otherwise
 degrade silently.
 

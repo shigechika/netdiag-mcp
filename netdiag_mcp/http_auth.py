@@ -153,6 +153,24 @@ def header_for(url: str, rules: tuple[Rule, ...]) -> dict[str, str]:
     return {}
 
 
+REDACTED = "[redacted]"
+
+
+def redact(body: str, headers: dict[str, str]) -> str:
+    """Mask the credential that was sent in a body that echoes it back.
+
+    Covers the full value and its credential part (after "Bearer " etc.); a
+    server that transforms the value (base64, hashing) is not covered.
+    """
+    value = headers.get("Authorization", "")
+    if not value:
+        return body
+    for secret in sorted({value, value.split(" ", 1)[-1]}, key=len, reverse=True):
+        if len(secret) >= 8:
+            body = body.replace(secret, REDACTED)
+    return body
+
+
 def status(environ: dict[str, str] | None = None) -> dict:
     """{"prefixes": [...], "error": str | None} for health_check. Never includes a header value."""
     try:
