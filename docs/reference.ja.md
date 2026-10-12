@@ -4,9 +4,11 @@
 
 ### `health_check`
 
-引数なし。`{status, service, version, binaries, missing}`を返す。`status`は
-`dig`/`ping`/`mtr`/`whois`が全てPATH上にあれば`"healthy"`、1つでも欠けていれば
-`"degraded"`（該当ツールは呼び出し時にエラーになるが、サーバー自体は起動し続ける）。
+引数なし。`{status, service, version, binaries, missing, http_auth}`を返す。`status`は
+`dig`/`ping`/`mtr`/`whois`が全てPATH上にあり、`NETDIAG_HTTP_AUTH`（設定していれば）が
+正しく読めれば`"healthy"`、そうでなければ`"degraded"`（該当ツールは呼び出し時にエラーになるが、
+サーバー自体は起動し続ける）。`http_auth`は`{prefixes, error}`で、設定したURL前方一致（ヘッダ値は
+出さない）と、読めなかったときの理由。
 
 ### `dns_lookup(hostname, record_type="A", resolver=None, transport="plain")`
 
@@ -52,6 +54,10 @@ JSON・XML・JavaScript・YAML・`+json`/`+xml`）のみで、それ以外はス
 リダイレクトは1ホップずつ（最大5回）追い、初回URLと同様に各ホップもループバック・
 リンクローカル・unspecifiedアドレス・クラウドのメタデータ宛先なら拒否する。
 呼び出し全体は`timeout * 3`の実時間で打ち切る。
+
+`NETDIAG_HTTP_AUTH`を設定すると、設定したhttpsの前方一致の下にあるホップには、その前方一致の
+`Authorization`ヘッダをホップごとに判定して付ける（READMEを参照）。そのときステータス行の末尾に
+`auth=applied`と出る。値は返さない。
 
 ### `tls_cert_check(host, port=443)`
 

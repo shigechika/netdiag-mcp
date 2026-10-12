@@ -22,6 +22,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 
+from netdiag_mcp import http_auth
 from netdiag_mcp.validate import clamp, validate_port, validate_target, validate_timezone
 
 DEFAULT_TIMEOUT = 5.0
@@ -307,13 +308,23 @@ def http_get(url: str, timeout: float = DEFAULT_TIMEOUT, max_bytes: int = HTTP_G
     ``timeout`` is httpx's per-operation (connect/read) timeout; a server that
     trickles one byte per read would never trip it, so the whole call is also
     bounded by ``timeout * HTTP_GET_BUDGET_FACTOR`` of wall clock.
+
+    When NETDIAG_HTTP_AUTH is set (see http_auth), each hop is sent with the
+    Authorization header of the prefix it falls under, decided per hop so a
+    redirect to another origin drops it. ``auth=applied`` on the status line
+    says the final hop carried one; the value is never returned.
     """
+    try:
+        rules = http_auth.load_rules()
+    except http_auth.HttpAuthConfigError as e:
+        raise ToolError(str(e)) from None
     t = clamp(timeout, 1, 15)
     limit = clamp(max_bytes, 1, HTTP_GET_MAX_BYTES)
     budget = t * HTTP_GET_BUDGET_FACTOR
     deadline = time.monotonic() + budget
     current = _check_destination(url.strip())
     hops: list[str] = []
+    authed = False
 
     def check_deadline() -> None:
         if time.monotonic() > deadline:
@@ -323,7 +334,9 @@ def http_get(url: str, timeout: float = DEFAULT_TIMEOUT, max_bytes: int = HTTP_G
         with httpx.Client(follow_redirects=False, timeout=t) as client:
             for _ in range(HTTP_GET_MAX_REDIRECTS + 1):
                 check_deadline()
-                with client.stream("GET", current) as resp:
+                headers = http_auth.header_for(current, rules)
+                authed = bool(headers)
+                with client.stream("GET", current, headers=headers) as resp:
                     if resp.is_redirect and "location" in resp.headers:
                         hops.append(current)
                         current = _check_destination(str(resp.url.join(resp.headers["location"])))
@@ -346,6 +359,8 @@ def http_get(url: str, timeout: float = DEFAULT_TIMEOUT, max_bytes: int = HTTP_G
     except httpx.HTTPError as e:
         raise ToolError(f"HTTP request failed: {e}") from e
     head = f"{status}  final_url={final_url}  content-type={ctype or '(none)'}"
+    if authed:
+        head += "  auth=applied"
     if hops:
         head += "\nredirects: " + " -> ".join([*hops, final_url])
     if not _is_textual(ctype):

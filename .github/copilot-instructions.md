@@ -45,9 +45,15 @@ approval-gate or write-tool allowlist to worry about.
   `_REQUIRED_BINARIES` in `server.py` (and the setup section of both
   READMEs) needs updating, or `health_check` will misreport server health.
 
+- The optional `NETDIAG_HTTP_AUTH` (`netdiag_mcp/http_auth.py`) carries
+  credentials. Flag any change that could return, log or put a header value
+  into an error or `health_check`; that attaches it by raw string prefix
+  instead of parsed scheme/host/port/path; that sends it over plain http; or
+  that sets it on the `httpx.Client` instead of per redirect hop.
+
 ## Not a concern here
 
-- No secrets, credentials, or config files — this server takes no
-  environment variables and reads no local credential store.
+- No config files or local credential store; the only environment variable is
+  the optional `NETDIAG_HTTP_AUTH` above.
 - No write/mutating tools, so there is no approval-gate or write-tool
   allowlist pattern (unlike some other servers in this fleet) to check.
