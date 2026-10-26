@@ -104,6 +104,15 @@ claude mcp add netdiag -- netdiag-mcp
 
 No environment variables are required.
 
+### 5. Codex
+
+```bash
+codex mcp add netdiag -- netdiag-mcp
+```
+
+Any other MCP client that launches stdio servers works the same way: give it
+`netdiag-mcp` as the command.
+
 ## Optional: credentials for `http_get`
 
 `http_get` can send an `Authorization` header to URLs under a configured https
