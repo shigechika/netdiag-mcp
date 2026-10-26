@@ -78,6 +78,14 @@ claude mcp add netdiag -- netdiag-mcp
 
 必須の環境変数はありません。
 
+### 5. Codex
+
+```bash
+codex mcp add netdiag -- netdiag-mcp
+```
+
+stdio サーバーを起動できる MCP クライアントなら、どれでも同じ形で使えます。コマンドに `netdiag-mcp` を指定してください。
+
 ## 任意: `http_get` の認証情報
 
 `http_get` は、設定した https の URL 前方一致の下にある URL へ `Authorization`
