@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/shigechika/netdiag-mcp/compare/v0.8.0...v0.8.1) (2026-10-26)
+
+
+### Bug Fixes
+
+* **deps:** bump certifi and opentelemetry-api (security) ([#26](https://github.com/shigechika/netdiag-mcp/issues/26)) ([5f3c73a](https://github.com/shigechika/netdiag-mcp/commit/5f3c73a3886ae17a97a3043e8be4d4e1a5033489))
+
 ## [0.8.0](https://github.com/shigechika/netdiag-mcp/compare/v0.7.0...v0.8.0) (2026-10-12)
 
 
