@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/shigechika/netdiag-mcp/compare/v0.8.1...v0.9.0) (2026-11-14)
+
+
+### Features
+
+* drop Python 3.10 (EOL) and add Python 3.15 support ([#32](https://github.com/shigechika/netdiag-mcp/issues/32)) ([0a52757](https://github.com/shigechika/netdiag-mcp/commit/0a527574ed3a20dd21d1ce69975e72495d0a233c))
+
 ## [0.8.1](https://github.com/shigechika/netdiag-mcp/compare/v0.8.0...v0.8.1) (2026-10-26)
 
 
