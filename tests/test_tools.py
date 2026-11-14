@@ -1,8 +1,7 @@
 import socket
 import subprocess
 import threading
-from datetime import datetime, timedelta
-from datetime import timezone as dt_timezone
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
@@ -419,7 +418,7 @@ def test_current_time_names_every_weekday_correctly():
     published report.
     """
     expected = [("Mon", "月"), ("Tue", "火"), ("Wed", "水"), ("Thu", "木"), ("Fri", "金"), ("Sat", "土"), ("Sun", "日")]
-    monday = datetime(2026, 9, 7, 12, 0, tzinfo=dt_timezone.utc)
+    monday = datetime(2026, 9, 7, 12, 0, tzinfo=UTC)
     for offset, (english, japanese) in enumerate(expected):
         got = tools.current_time("UTC", now=monday + timedelta(days=offset))
         assert (got["weekday"], got["weekday_ja"]) == (english, japanese)
@@ -429,7 +428,7 @@ def test_current_time_names_every_weekday_correctly():
 
 def test_current_time_converts_into_the_requested_zone():
     """A moment that is still the 8th in UTC is already the 9th in Tokyo."""
-    got = tools.current_time("Asia/Tokyo", now=datetime(2026, 9, 8, 15, 30, tzinfo=dt_timezone.utc))
+    got = tools.current_time("Asia/Tokyo", now=datetime(2026, 9, 8, 15, 30, tzinfo=UTC))
     assert got["date"] == "2026-09-09"
     assert got["time"] == "00:30"
     assert got["weekday"] == "Wed"
@@ -443,12 +442,12 @@ def test_current_time_converts_into_the_requested_zone():
 def test_current_time_reads_a_naive_moment_as_utc():
     """Never as the host's local time — the answer must not depend on the server's tz."""
     naive = tools.current_time("Asia/Tokyo", now=datetime(2026, 9, 8, 15, 30))
-    aware = tools.current_time("Asia/Tokyo", now=datetime(2026, 9, 8, 15, 30, tzinfo=dt_timezone.utc))
+    aware = tools.current_time("Asia/Tokyo", now=datetime(2026, 9, 8, 15, 30, tzinfo=UTC))
     assert naive == aware
 
 
 def test_current_time_defaults_to_utc():
-    got = tools.current_time(now=datetime(2026, 9, 8, 15, 30, tzinfo=dt_timezone.utc))
+    got = tools.current_time(now=datetime(2026, 9, 8, 15, 30, tzinfo=UTC))
     assert got["timezone"] == "UTC"
     assert got["date"] == "2026-09-08"
     assert got["utc_offset"] == "+00:00"
@@ -472,7 +471,7 @@ def test_current_time_keeps_a_sub_minute_offset_intact():
     fixed-width slice of ``%z`` (``+091859``), which would silently emit
     ``+09:1859``.
     """
-    got = tools.current_time("Asia/Tokyo", now=datetime(1880, 1, 1, tzinfo=dt_timezone.utc))
+    got = tools.current_time("Asia/Tokyo", now=datetime(1880, 1, 1, tzinfo=UTC))
     assert got["iso"].endswith(got["utc_offset"])
     assert got["utc_offset"].count(":") == 2, "offset truncated to ±HH:MM"
     assert datetime.fromisoformat(got["iso"]).utcoffset().total_seconds() % 60 != 0
