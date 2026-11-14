@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "MCP server wrapping dig, ping, mtr, whois and TLS/HTTP checks for on-demand network diagnostics"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [
     {name = "AIKAWA Shigechika"},
 ]
@@ -18,9 +18,11 @@ classifiers = [
     "Intended Audience :: System Administrators",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Topic :: System :: Networking",
     "Topic :: Internet",
 ]
@@ -56,7 +58,7 @@ packages = ["netdiag_mcp"]
 version = {attr = "netdiag_mcp.__version__"}
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 line-length = 120
 # scripts/smoke_harness.py is shared verbatim across the servers in this
 # family and is formatted at a narrower width there. Reformatting it here

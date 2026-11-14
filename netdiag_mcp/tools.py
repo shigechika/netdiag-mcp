@@ -16,8 +16,7 @@ import ssl
 import subprocess
 import time
 import urllib.parse
-from datetime import datetime
-from datetime import timezone as _dt_timezone
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
@@ -442,11 +441,11 @@ def current_time(timezone: str = "UTC", now: datetime | None = None) -> dict:
         tz = ZoneInfo(zone)
     except (ZoneInfoNotFoundError, ValueError) as e:
         raise ToolError(f"unknown timezone {zone!r}: {e}") from e
-    moment = now if now is not None else datetime.now(_dt_timezone.utc)
+    moment = now if now is not None else datetime.now(UTC)
     if moment.tzinfo is None:
         # A naive moment is read as UTC, never as the host's local time, so
         # the answer does not depend on how the server happens to be set.
-        moment = moment.replace(tzinfo=_dt_timezone.utc)
+        moment = moment.replace(tzinfo=UTC)
     local = moment.astimezone(tz)
     index = local.weekday()
     iso = local.isoformat(timespec="seconds")
@@ -464,6 +463,6 @@ def current_time(timezone: str = "UTC", now: datetime | None = None) -> dict:
         # would need its own width special-case. timespec="seconds" fixes
         # the datetime half at 19 characters, so the rest is the offset.
         "utc_offset": iso[19:],
-        "utc": moment.astimezone(_dt_timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "utc": moment.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "epoch": int(moment.timestamp()),
     }
