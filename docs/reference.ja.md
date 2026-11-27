@@ -4,11 +4,12 @@
 
 ### `health_check`
 
-引数なし。`{status, service, version, binaries, missing, http_auth}`を返す。`status`は
-`dig`/`ping`/`mtr`/`whois`が全てPATH上にあり、`NETDIAG_HTTP_AUTH`（設定していれば）が
+引数なし。`{status, service, version, binaries, missing, http_auth, nat64}`を返す。`status`は
+`dig`/`ping`/`mtr`/`whois`が全てPATH上にあり、`NETDIAG_HTTP_AUTH`と`NETDIAG_NAT64_PREFIX`（設定していれば）が
 正しく読めれば`"healthy"`、そうでなければ`"degraded"`（該当ツールは呼び出し時にエラーになるが、
 サーバー自体は起動し続ける）。`http_auth`は`{prefixes, error}`で、設定したURL前方一致（ヘッダ値は
-出さない）と、読めなかったときの理由。
+出さない）と、読めなかったときの理由。`nat64`は`{prefix, error}`で、IPv6だけのホストでIPv4アドレスを
+つなぐNAT64プレフィックス（未設定なら`null`）と、読めなかったときの理由（READMEを参照）。
 
 ### `dns_lookup(hostname, record_type="A", resolver=None, transport="plain")`
 
@@ -52,7 +53,7 @@ URLへGETしデコード済みの本文を返す。返すのはテキスト系�
 JSON・XML・JavaScript・YAML・`+json`/`+xml`）のみで、それ以外はステータス行だけを返す。
 本文は`max_bytes`（上限1 MiB）で打ち切り、切れた場合は`truncated`と明記する。
 リダイレクトは1ホップずつ（最大5回）追い、初回URLと同様に各ホップもループバック・
-リンクローカル・unspecifiedアドレス・クラウドのメタデータ宛先なら拒否する。
+リンクローカル・unspecifiedアドレス・クラウドのメタデータ宛先（そのNAT64の形も含む）なら拒否する。
 呼び出し全体は`timeout * 3`の実時間で打ち切る。
 
 `NETDIAG_HTTP_AUTH`を設定すると、設定したhttpsの前方一致の下にあるホップには、その前方一致の

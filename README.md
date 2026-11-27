@@ -147,11 +147,44 @@ NETDIAG_HTTP_AUTH='{"https://reports.example.ac.jp/daily/": "Bearer <token>"}'
   the environment of the instance that should send it — a file would be shared
   by all of them.
 
+## Optional: NAT64 on an IPv6-only host
+
+On a host with IPv6 only, names already work through the network's DNS64, but
+an IPv4 literal such as `192.0.2.33` fails with "Network is unreachable". Set
+`NETDIAG_NAT64_PREFIX` to the network's NAT64 prefix (RFC 6052, /96 only, bits 64-71 zero):
+
+```bash
+NETDIAG_NAT64_PREFIX=64:ff9b::/96
+```
+
+- `ping_host`, `traceroute_path`, `tcp_port_check`, `tls_cert_check`,
+  `http_check`, `http_get` and the `resolver` of `dns_lookup`/`dnssec_check`
+  then reach an IPv4 literal through the address synthesized from the prefix
+  (IPv4 loopback is used as is). The output still names the IPv4 target and
+  says which address was used: `via NAT64 <address>` for ping, traceroute, the
+  TCP and TLS checks and the DNS resolver, and a `via NAT64: <IPv4> -> <IPv6>`
+  line for the connections `http_check`/`http_get` opened (their URLs stay
+  IPv4).
+- For HTTP the `Host` header stays the IPv4 literal, and for https the
+  certificate is still checked against it.
+- `http_get` refuses an address under the configured prefix or the
+  well-known prefix `64:ff9b::/96` when the IPv4 address it carries is blocked
+  (or is `0.0.0.0`), so a DNS64 answer under one of them cannot reach a
+  metadata endpoint either. The well-known prefix is checked whether or not the
+  variable is set. Any other prefix, the RFC 8215 local-use `64:ff9b:1::/48`
+  included, is covered only when it is the one configured, because its layout
+  depends on the network.
+- Only the TCP connection changes, so proxies from the environment or the
+  system settings (with `NO_PROXY`) work as before; a proxy given as an IPv4
+  literal is reached through NAT64 too, except one on IPv4 loopback.
+- Unset, IPv4 literals are used as given. A malformed value makes the affected
+  tools return an error and `health_check` report `degraded`.
+
 ## CLI
 
 ```bash
 netdiag-mcp --version   # print version
-netdiag-mcp --check     # report missing binaries and a malformed NETDIAG_HTTP_AUTH (exit 0 when all binaries are present and the setting, if any, parses)
+netdiag-mcp --check     # report missing binaries and a malformed NETDIAG_HTTP_AUTH or NETDIAG_NAT64_PREFIX (exit 0 when all binaries are present and the settings, if any, parse)
 ```
 
 ## Security notes

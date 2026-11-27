@@ -504,6 +504,7 @@ wheels = [
 name = "netdiag-mcp"
 source = { editable = "." }
 dependencies = [
+    { name = "httpcore" },
     { name = "httpx" },
     { name = "mcp" },
     { name = "tzdata" },
@@ -518,6 +519,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "httpcore", specifier = ">=1.0" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "mcp", specifier = ">=2,<3" },
     { name = "pytest", marker = "extra == 'dev'" },

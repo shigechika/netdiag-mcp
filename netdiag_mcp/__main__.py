@@ -21,6 +21,10 @@ use Python's own socket/ssl/httpx stack and need no external binary.
 Optional: NETDIAG_HTTP_AUTH, a JSON object mapping an https URL prefix to the
 Authorization header http_get sends under it, e.g.
   NETDIAG_HTTP_AUTH='{"https://reports.example.ac.jp/daily/": "Bearer <token>"}'
+
+Optional: NETDIAG_NAT64_PREFIX, the NAT64 /96 prefix of an IPv6-only host;
+IPv4 literals are then reached through the address synthesized from it, e.g.
+  NETDIAG_NAT64_PREFIX=64:ff9b::/96
 """,
     )
     parser.add_argument("--version", action="store_true", help="Print version and exit")
@@ -40,6 +44,8 @@ Authorization header http_get sends under it, e.g.
             print(f"missing binaries: {', '.join(result['missing'])}", file=sys.stderr)
         if result["http_auth"]["error"]:
             print(result["http_auth"]["error"], file=sys.stderr)
+        if result["nat64"]["error"]:
+            print(result["nat64"]["error"], file=sys.stderr)
         sys.exit(0 if result["status"] == "healthy" else 2)
 
     from netdiag_mcp.server import mcp

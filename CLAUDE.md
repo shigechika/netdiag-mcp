@@ -7,7 +7,8 @@ MCP server wrapping `dig`/`ping`/`mtr`/`whois` and Python's own
 diagnostics (DNS, ping, traceroute, TCP port checks, HTTP, TLS certs,
 WHOIS, ASN/GeoIP lookups). Transport is stdio only. All 9 tools are
 read-only — there is no write/mutating tool, no config file, and no
-environment variable required (`NETDIAG_HTTP_AUTH` is optional).
+environment variable required (`NETDIAG_HTTP_AUTH` and `NETDIAG_NAT64_PREFIX`
+are optional).
 
 ## Commands
 
@@ -42,13 +43,24 @@ uv run ruff format --check .      # format (gated in CI)
   `clamp()` (bounds a count/cycles argument). Every tool runs its
   target/port/count through one of these before it reaches a subprocess or
   socket call — inputs are LLM-driven and treated as adversarial.
+- `netdiag_mcp/nat64.py` — optional `NETDIAG_NAT64_PREFIX` (/96) for an
+  IPv6-only host. `tools._via_nat64()` turns an IPv4 literal into its NAT64
+  address for ping/mtr/TCP/TLS/dig's resolver, `_http_client()` puts
+  `_Nat64Backend` under every httpcore pool of the httpx client (only the TCP
+  target changes; URL, Host, TLS name, pools and proxies stay httpx's), and
+  `_check_destination` checks the IPv4 address embedded in any address under
+  the configured or well-known (`64:ff9b::/96`) prefix; other prefixes
+  (local-use `64:ff9b:1::/48` included) only when configured, since their
+  layout depends on the network. IPv4 loopback is never translated.
 - `netdiag_mcp/__main__.py` — argparse CLI: `--version`, `--check` (reports
-  missing binaries, exits non-zero if any are absent), then
+  missing binaries and a malformed `NETDIAG_HTTP_AUTH` or `NETDIAG_NAT64_PREFIX`,
+  exits non-zero if any), then
   `mcp.run(transport="stdio")`.
 
 ## Conventions
 
-- No credential store and no config file. The only environment variable is
+- No credential store and no config file. The environment variables are the
+  optional `NETDIAG_NAT64_PREFIX` (`netdiag_mcp/nat64.py`, see Architecture) and
   the optional `NETDIAG_HTTP_AUTH` (`netdiag_mcp/http_auth.py`): an https URL
   prefix → `Authorization` value map that `http_get` applies per redirect hop
   after comparing parsed scheme/host/port/path. Never return, log or put the

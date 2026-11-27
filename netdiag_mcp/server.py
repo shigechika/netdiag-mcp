@@ -8,7 +8,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError as SDKToolError
 from mcp.shared.exceptions import MCPError
 
-from netdiag_mcp import __version__, http_auth, tools
+from netdiag_mcp import __version__, http_auth, nat64, tools
 from netdiag_mcp.tools import ToolError
 
 
@@ -65,25 +65,29 @@ _REQUIRED_BINARIES = ("dig", "ping", "mtr", "whois")
 
 @mcp.tool()
 def health_check() -> dict:
-    """Service health: version, which wrapped binaries are present on PATH, and the http_get auth prefixes.
+    """Service health: version, wrapped binaries on PATH, the http_get auth prefixes and the NAT64 prefix.
 
     Returns a fixed shape (status/service/version + backend fields) so a
     monitoring caller never has to branch on missing keys. status is
-    "healthy" when every wrapped binary is found and NETDIAG_HTTP_AUTH (if
-    set) parses, "degraded" otherwise (the affected tools fail at call time).
-    http_auth lists the configured URL prefixes, never the header values.
+    "healthy" when every wrapped binary is found and NETDIAG_HTTP_AUTH and
+    NETDIAG_NAT64_PREFIX (if set) parse, "degraded" otherwise (the affected
+    tools fail at call time). http_auth lists the configured URL prefixes,
+    never the header values. nat64 shows the prefix IPv4 literals are reached
+    through on an IPv6-only host (null when unset).
     """
 
     binaries = {name: shutil.which(name) is not None for name in _REQUIRED_BINARIES}
     missing = [name for name, present in binaries.items() if not present]
     auth = http_auth.status()
+    nat = nat64.status()
     return {
-        "status": "healthy" if not missing and auth["error"] is None else "degraded",
+        "status": "healthy" if not missing and auth["error"] is None and nat["error"] is None else "degraded",
         "service": "netdiag-mcp",
         "version": __version__,
         "binaries": binaries,
         "missing": missing,
         "http_auth": auth,
+        "nat64": nat,
     }
 
 
