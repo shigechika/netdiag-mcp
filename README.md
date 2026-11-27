@@ -147,11 +147,37 @@ NETDIAG_HTTP_AUTH='{"https://reports.example.ac.jp/daily/": "Bearer <token>"}'
   the environment of the instance that should send it — a file would be shared
   by all of them.
 
+## Optional: NAT64 on an IPv6-only host
+
+On a host with IPv6 only, names already work through the network's DNS64, but
+an IPv4 literal such as `192.0.2.33` fails with "Network is unreachable". Set
+`NETDIAG_NAT64_PREFIX` to the network's NAT64 prefix (RFC 6052, /96 only):
+
+```bash
+NETDIAG_NAT64_PREFIX=64:ff9b::/96
+```
+
+- `ping_host`, `traceroute_path`, `tcp_port_check`, `tls_cert_check`,
+  `http_check`, `http_get` and the `resolver` of `dns_lookup`/`dnssec_check`
+  then reach an IPv4 literal through the address synthesized from the prefix.
+  The output still names the IPv4 target and adds `via NAT64 <address>`.
+- For HTTP the `Host` header stays the IPv4 literal, and for https the
+  certificate is still checked against it.
+- `http_get` refuses an address under the configured or the well-known prefix
+  (`64:ff9b::/96`) when the IPv4 address it carries is blocked, so a DNS64
+  answer cannot reach a metadata endpoint either. This check applies whether
+  or not the variable is set.
+- Only the TCP connection changes, so proxies from the environment or the
+  system settings (with `NO_PROXY`) work as before; a proxy given as an IPv4
+  literal is reached through NAT64 too.
+- Unset, IPv4 literals are used as given. A malformed value makes the affected
+  tools return an error and `health_check` report `degraded`.
+
 ## CLI
 
 ```bash
 netdiag-mcp --version   # print version
-netdiag-mcp --check     # report missing binaries and a malformed NETDIAG_HTTP_AUTH (exit 0 when all binaries are present and the setting, if any, parses)
+netdiag-mcp --check     # report missing binaries and a malformed NETDIAG_HTTP_AUTH or NETDIAG_NAT64_PREFIX (exit 0 when all binaries are present and the settings, if any, parse)
 ```
 
 ## Security notes

@@ -101,11 +101,33 @@ NETDIAG_HTTP_AUTH='{"https://reports.example.ac.jp/daily/": "Bearer <token>"}'
 - 値が不正なら黙って無視せず、`http_get` はエラーを返し、`health_check` は `degraded` になります
 - 読むのは環境変数だけです。同じユーザーで複数のインスタンスを動かす場合（多くの人に開いたものと、限られた人向けのものなど）は、送るべきインスタンスの環境にだけ設定してください。ファイルにすると全インスタンスで共有されます
 
+## 任意: IPv6 だけのホストでの NAT64
+
+IPv6 だけのホストでは、名前はネットワークの DNS64 でそのまま引けますが、`192.0.2.33` のような
+IPv4 アドレスを直接指定すると「Network is unreachable」で失敗します。`NETDIAG_NAT64_PREFIX` に
+ネットワークの NAT64 プレフィックス（RFC 6052、/96 のみ）を設定します。
+
+```bash
+NETDIAG_NAT64_PREFIX=64:ff9b::/96
+```
+
+- `ping_host`・`traceroute_path`・`tcp_port_check`・`tls_cert_check`・`http_check`・`http_get`、
+  `dns_lookup`/`dnssec_check` の `resolver` は、IPv4 アドレスをプレフィックスから合成したアドレス経由で
+  つなぎます。出力には元の IPv4 アドレスを出し、`via NAT64 <アドレス>` を添えます
+- HTTP の `Host` ヘッダは元の IPv4 アドレスのまま、https の証明書も元のアドレスで確かめます
+- `http_get` は、設定したプレフィックスと既知のプレフィックス（`64:ff9b::/96`）の下のアドレスについて、
+  中に入っている IPv4 アドレスが拒否対象なら拒否します。DNS64 の応答経由でもメタデータの宛先には
+  届きません。この確認は変数を設定していなくても行います
+- 変わるのは TCP の接続先だけなので、環境変数や OS の設定のプロキシ（`NO_PROXY` を含む）はそのまま効きます。
+  IPv4 アドレスで指定したプロキシにも NAT64 経由でつなぎます
+- 設定しなければ IPv4 アドレスはそのまま使います。値が不正なら該当ツールはエラーを返し、
+  `health_check` は `degraded` になります
+
 ## CLI
 
 ```bash
 netdiag-mcp --version   # バージョン表示
-netdiag-mcp --check     # バイナリの欠けと NETDIAG_HTTP_AUTH の不正を報告（全バイナリがあり、設定していれば正しく読めるときexit 0）
+netdiag-mcp --check     # バイナリの欠けと NETDIAG_HTTP_AUTH・NETDIAG_NAT64_PREFIX の不正を報告（全バイナリがあり、設定していれば正しく読めるときexit 0）
 ```
 
 ## セキュリティ上の注意

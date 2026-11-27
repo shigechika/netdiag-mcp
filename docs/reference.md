@@ -4,12 +4,14 @@
 
 ### `health_check`
 
-No parameters. Returns `{status, service, version, binaries, missing, http_auth}`.
+No parameters. Returns `{status, service, version, binaries, missing, http_auth, nat64}`.
 `status` is `"healthy"` when `dig`/`ping`/`mtr`/`whois` are all on PATH and
-`NETDIAG_HTTP_AUTH` (if set) parses, `"degraded"` otherwise — the affected
+`NETDIAG_HTTP_AUTH` and `NETDIAG_NAT64_PREFIX` (if set) parse, `"degraded"` otherwise — the affected
 tools fail at call time, but the server itself keeps running. `http_auth` is
 `{prefixes, error}`: the configured URL prefixes (never the header values) and
-the parse error, if any.
+the parse error, if any. `nat64` is `{prefix, error}`: the NAT64 prefix IPv4
+literals are reached through on an IPv6-only host (`null` when unset), and the
+parse error, if any (see the README).
 
 ### `dns_lookup(hostname, record_type="A", resolver=None, transport="plain")`
 
@@ -57,7 +59,7 @@ anything else yields the status line only. The body is capped at `max_bytes`
 (hard ceiling 1 MiB) and marked `truncated` when cut. Redirects are followed one
 hop at a time (at most 5) and every hop, like the initial URL, is refused if it
 resolves to loopback, link-local, an unspecified address or a cloud metadata
-endpoint. The whole call is bounded by `timeout * 3` of wall clock.
+endpoint, including the NAT64 form of such an address. The whole call is bounded by `timeout * 3` of wall clock.
 
 With `NETDIAG_HTTP_AUTH` set, each hop under a configured https prefix is sent
 with that prefix's `Authorization` header, decided per hop (see the README).

@@ -19,9 +19,10 @@ import urllib.parse
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+import httpcore
 import httpx
 
-from netdiag_mcp import http_auth
+from netdiag_mcp import http_auth, nat64
 from netdiag_mcp.validate import clamp, validate_port, validate_target, validate_timezone
 
 DEFAULT_TIMEOUT = 5.0
@@ -43,6 +44,70 @@ _WEEKDAYS_JA = ("月", "火", "水", "木", "金", "土", "日")
 
 class ToolError(Exception):
     """A tool could not run at all (missing binary, timeout, bad input)."""
+
+
+def _nat64_prefix():
+    try:
+        return nat64.load_prefix()
+    except nat64.Nat64ConfigError as e:
+        raise ToolError(str(e)) from None
+
+
+def _via_nat64(target: str) -> tuple[str, str]:
+    """(address to connect to, note for the output) for an already-validated target.
+
+    With NETDIAG_NAT64_PREFIX set, an IPv4 literal becomes its NAT64 address and
+    the note says so; anything else is returned unchanged with an empty note.
+    """
+    addr = nat64.synthesize(target, _nat64_prefix())
+    return addr, (f" via NAT64 {addr}" if addr != target else "")
+
+
+class _Nat64Backend(httpcore.SyncBackend):
+    """Opens the TCP connection of an IPv4 literal to its NAT64 address.
+
+    Only the socket's target changes. httpx keeps everything above it as it
+    is: the URL, the Host header, the name the certificate is checked against
+    (the IPv4 literal), the connection pools and the proxy settings from the
+    environment or the system (with NO_PROXY). A proxy given as an IPv4 literal
+    is reached through NAT64 the same way.
+    """
+
+    def __init__(self, prefix):
+        self._prefix = prefix
+
+    def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):
+        return super().connect_tcp(
+            nat64.synthesize(host, self._prefix),
+            port,
+            timeout=timeout,
+            local_address=local_address,
+            socket_options=socket_options,
+        )
+
+
+def _http_client(**kwargs) -> httpx.Client:
+    """httpx.Client(**kwargs), with every connection pool using the NAT64 backend when a prefix is set.
+
+    httpx has no public hook for the network backend, so it is set on each
+    transport's httpcore pool (the default one and the proxy mounts). If httpx
+    ever builds its transports differently, this fails loudly instead of
+    silently connecting without NAT64.
+    """
+    prefix = _nat64_prefix()
+    client = httpx.Client(**kwargs)
+    if prefix is None:
+        return client
+    backend = _Nat64Backend(prefix)
+    for transport in (client._transport, *client._mounts.values()):
+        if transport is None:
+            continue
+        pool = getattr(transport, "_pool", None)
+        if not hasattr(pool, "_network_backend"):
+            client.close()
+            raise ToolError("NETDIAG_NAT64_PREFIX is not supported with this httpx version")
+        pool._network_backend = backend
+    return client
 
 
 def _run(binary: str, args: list[str]) -> str:
@@ -80,7 +145,7 @@ def dns_lookup(hostname: str, record_type: str = "A", resolver: str | None = Non
     flag = _transport_flag(transport)
     args = []
     if resolver:
-        args.append(f"@{validate_target(resolver)}")
+        args.append(f"@{_via_nat64(validate_target(resolver))[0]}")
     if flag:
         args.append(flag)
     args += [target, rtype, "+noall", "+answer", "+stats"]
@@ -99,7 +164,7 @@ def dnssec_check(hostname: str, resolver: str = "1.1.1.1", transport: str = "pla
     when a network intercepts/spoofs port 53 but leaves 443/853 alone.
     """
     target = validate_target(hostname)
-    res = validate_target(resolver)
+    res = _via_nat64(validate_target(resolver))[0]
     flag = _transport_flag(transport)
     args = [f"@{res}"]
     if flag:
@@ -141,22 +206,26 @@ def ping_host(host: str, count: int = 4) -> str:
     now works on both platforms.
     """
     target = validate_target(host)
+    addr, note = _via_nat64(target)
     n = clamp(count, 1, 10)
     deadline = clamp(n * 2, 4, 10)
     is_linux = platform.system() == "Linux"
-    binary = "ping" if is_linux or not _is_ipv6_literal(target) else "ping6"
+    binary = "ping" if is_linux or not _is_ipv6_literal(addr) else "ping6"
     args = ["-c", str(n)]
     if binary != "ping6":
         args += ["-w" if is_linux else "-t", str(deadline)]
-    args.append(target)
-    return _run(binary, args)
+    args.append(addr)
+    out = _run(binary, args)
+    return f"{target}{note}\n{out}" if note else out
 
 
 def traceroute_path(host: str, cycles: int = 3) -> str:
     """mtr in report mode — a fixed number of cycles, not a live/continuous run."""
     target = validate_target(host)
+    addr, note = _via_nat64(target)
     n = clamp(cycles, 1, 10)
-    return _run("mtr", ["--report", "--report-cycles", str(n), "--no-dns", target])
+    out = _run("mtr", ["--report", "--report-cycles", str(n), "--no-dns", addr])
+    return f"{target}{note}\n{out}" if note else out
 
 
 def whois_lookup(domain: str) -> str:
@@ -200,22 +269,23 @@ def tcp_port_check(host: str, port: int, timeout: float = DEFAULT_TIMEOUT) -> st
     target = validate_target(host)
     p = validate_port(port)
     t = clamp(timeout, 1, 15)
+    addr, note = _via_nat64(target)
     start = time.monotonic()
     try:
-        with socket.create_connection((target, p), timeout=t):
+        with socket.create_connection((addr, p), timeout=t):
             elapsed_ms = (time.monotonic() - start) * 1000
-            return f"{target}:{p} open ({elapsed_ms:.1f}ms)"
+            return f"{target}:{p}{note} open ({elapsed_ms:.1f}ms)"
     except TimeoutError:
-        return f"{target}:{p} timed out after {t:g}s"
+        return f"{target}:{p}{note} timed out after {t:g}s"
     except (ConnectionRefusedError, OSError) as e:
-        return f"{target}:{p} closed/unreachable: {e}"
+        return f"{target}:{p}{note} closed/unreachable: {e}"
 
 
 def http_check(url: str, timeout: float = DEFAULT_TIMEOUT) -> str:
     """HEAD (falling back to GET) via httpx — reports status, redirect chain and latency."""
     t = clamp(timeout, 1, 15)
     try:
-        with httpx.Client(follow_redirects=True, timeout=t) as client:
+        with _http_client(follow_redirects=True, timeout=t) as client:
             start = time.monotonic()
             resp = client.head(url)
             if resp.status_code == 405:
@@ -288,13 +358,19 @@ def _check_destination(url: str) -> str:
         except socket.gaierror as e:
             raise ToolError(f"cannot resolve {host}: {e}") from e
         addrs = {ipaddress.ip_address(info[4][0]) for info in infos}
+    prefix = _nat64_prefix()
     for addr in addrs:
-        # ::ffff:127.0.0.1 is IPv6 to ipaddress but reaches the IPv4 loopback;
-        # compare the embedded IPv4 address. 0.0.0.0 / :: connect to localhost
-        # on Linux and belong to no listed range, so refuse them by name.
-        real = getattr(addr, "ipv4_mapped", None) or addr
-        if real.is_unspecified or any(real in net for net in _BLOCKED_NETS):
-            raise ToolError(f"refusing to fetch {host}: resolves to blocked address {addr}")
+        # ::ffff:127.0.0.1 is IPv6 to ipaddress but reaches the IPv4 loopback,
+        # and a NAT64 address (64:ff9b::a9fe:a9fe) reaches the IPv4 address it
+        # carries; compare the embedded IPv4 address. 0.0.0.0 / :: connect to
+        # localhost on Linux and belong to no listed range, so refuse them by name.
+        # Both the address itself and the one it carries are checked, so a
+        # prefix that overlaps a blocked range (e.g. ::/96 and ::1) cannot hide it.
+        # An IPv4 literal is also checked in the NAT64 form it is sent to.
+        synthesized = ipaddress.ip_address(nat64.synthesize(str(addr), prefix))
+        for real in (addr, getattr(addr, "ipv4_mapped", None), nat64.embedded_ipv4(addr, prefix), synthesized):
+            if real is not None and (real.is_unspecified or any(real in net for net in _BLOCKED_NETS)):
+                raise ToolError(f"refusing to fetch {host}: resolves to blocked address {addr}")
     return url
 
 
@@ -331,7 +407,7 @@ def http_get(url: str, timeout: float = DEFAULT_TIMEOUT, max_bytes: int = HTTP_G
             raise ToolError(f"http_get exceeded its {budget:g}s budget")
 
     try:
-        with httpx.Client(follow_redirects=False, timeout=t) as client:
+        with _http_client(follow_redirects=False, timeout=t) as client:
             for _ in range(HTTP_GET_MAX_REDIRECTS + 1):
                 check_deadline()
                 rule = http_auth.match(current, rules)
@@ -396,15 +472,16 @@ def tls_cert_check(host: str, port: int = 443) -> str:
     # minimum here regardless — set it explicitly so the guarantee doesn't
     # depend on the runtime's ssl module defaults.
     ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    addr, note = _via_nat64(target)
     try:
-        with socket.create_connection((target, p), timeout=DEFAULT_TIMEOUT) as sock:
+        with socket.create_connection((addr, p), timeout=DEFAULT_TIMEOUT) as sock:
             with ctx.wrap_socket(sock, server_hostname=target) as tls:
                 cert = tls.getpeercert()
                 cipher = tls.cipher()
     except ssl.SSLCertVerificationError as e:
         return f"TLS handshake failed certificate verification: {e}"
     except (TimeoutError, OSError) as e:
-        raise ToolError(f"could not connect to {target}:{p}: {e}") from e
+        raise ToolError(f"could not connect to {target}:{p}{note}: {e}") from e
     subject = dict(x[0] for x in cert.get("subject", []))
     issuer = dict(x[0] for x in cert.get("issuer", []))
     sans = [v for k, v in cert.get("subjectAltName", []) if k == "DNS"]
@@ -416,6 +493,8 @@ def tls_cert_check(host: str, port: int = 443) -> str:
     ]
     if sans:
         lines.append(f"subjectAltName: {', '.join(sans)}")
+    if note:
+        lines.append(f"connected{note}")
     return "\n".join(lines)
 
 
