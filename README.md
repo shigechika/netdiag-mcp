@@ -160,15 +160,16 @@ NETDIAG_NAT64_PREFIX=64:ff9b::/96
 - `ping_host`, `traceroute_path`, `tcp_port_check`, `tls_cert_check`,
   `http_check`, `http_get` and the `resolver` of `dns_lookup`/`dnssec_check`
   then reach an IPv4 literal through the address synthesized from the prefix
-  (IPv4 loopback is used as is). `ping_host`, `traceroute_path`,
-  `tcp_port_check` and `tls_cert_check` name the IPv4 target and add
-  `via NAT64 <address>`; `http_check` and `http_get` keep reporting the IPv4
-  URL, and `dig` shows the server address it used on its `SERVER:` line.
+  (IPv4 loopback is used as is). The output still names the IPv4 target and
+  says which address was used: `via NAT64 <address>` for ping, traceroute, the
+  TCP and TLS checks and the DNS resolver, and a `via NAT64: <IPv4> -> <IPv6>`
+  line for the connections `http_check`/`http_get` opened (their URLs stay
+  IPv4).
 - For HTTP the `Host` header stays the IPv4 literal, and for https the
   certificate is still checked against it.
 - `http_get` refuses an address under the configured prefix, the well-known
-  prefix `64:ff9b::/96` or the local-use prefix `64:ff9b:1::/48` (read with the
-  /96 layout) when the IPv4 address it carries is blocked, so a DNS64 answer
+  prefix `64:ff9b::/96` or the local-use prefix `64:ff9b:1::/48` (read with
+  every RFC 6052 layout that fits in it) when the IPv4 address it carries is blocked, so a DNS64 answer
   under one of them cannot reach a metadata endpoint either. The well-known and
   local-use prefixes are checked whether or not the variable is set; a DNS64
   that uses another network-specific prefix is covered only when that prefix

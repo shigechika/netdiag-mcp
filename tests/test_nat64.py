@@ -61,14 +61,16 @@ def test_synthesize_without_prefix_is_identity():
     assert nat64.synthesize("192.0.2.33", None) == "192.0.2.33"
 
 
-def test_embedded_ipv4_well_known_and_configured():
+def test_embedded_ipv4s_well_known_and_configured():
     custom = ipaddress.IPv6Network("2001:db8:64::/96")
-    assert nat64.embedded_ipv4(ipaddress.ip_address("64:ff9b::a9fe:a9fe"), None) == ipaddress.ip_address(
-        "169.254.169.254"
-    )
-    assert nat64.embedded_ipv4(ipaddress.ip_address("2001:db8:64::7f00:1"), custom) == ipaddress.ip_address("127.0.0.1")
-    assert nat64.embedded_ipv4(ipaddress.ip_address("2001:db8::1"), custom) is None
-    assert nat64.embedded_ipv4(ipaddress.ip_address("192.0.2.1"), custom) is None
+    assert nat64.embedded_ipv4s(ipaddress.ip_address("64:ff9b::a9fe:a9fe"), None) == [
+        ipaddress.ip_address("169.254.169.254")
+    ]
+    assert nat64.embedded_ipv4s(ipaddress.ip_address("2001:db8:64::7f00:1"), custom) == [
+        ipaddress.ip_address("127.0.0.1")
+    ]
+    assert nat64.embedded_ipv4s(ipaddress.ip_address("2001:db8::1"), custom) == []
+    assert nat64.embedded_ipv4s(ipaddress.ip_address("192.0.2.1"), custom) == []
 
 
 def test_status_reports_prefix_and_error():
@@ -250,10 +252,21 @@ def test_backend_dials_loopback_proxy_directly(monkeypatch):
     assert seen == ["127.0.0.1"]
 
 
-def test_embedded_ipv4_local_use_prefix():
-    assert nat64.embedded_ipv4(ipaddress.ip_address("64:ff9b:1::a9fe:a9fe"), None) == ipaddress.ip_address(
-        "169.254.169.254"
+def test_embedded_ipv4s_local_use_reads_every_layout():
+    carried = nat64.embedded_ipv4s(ipaddress.ip_address("64:ff9b:1:c000:2:2100::"), None)
+    assert ipaddress.ip_address("192.0.2.33") in carried  # the /48 layout
+    carried = nat64.embedded_ipv4s(ipaddress.ip_address("64:ff9b:1::a9fe:a9fe"), None)
+    assert ipaddress.ip_address("169.254.169.254") in carried  # the /96 layout
+
+
+def test_http_get_allows_valid_local_use_48_destination(monkeypatch):
+    monkeypatch.delenv(nat64.ENV_VAR, raising=False)
+    monkeypatch.setattr(
+        tools.socket,
+        "getaddrinfo",
+        lambda host, port, *a, **k: [(socket.AF_INET6, None, None, None, ("64:ff9b:1:c000:2:2100::", port))],
     )
+    assert tools._check_destination("https://ok.example/") == "https://ok.example/"
 
 
 def test_http_get_refuses_local_use_form_of_metadata(monkeypatch):
@@ -285,3 +298,49 @@ def test_tls_verification_failure_names_nat64(monkeypatch, nat64_env):
     monkeypatch.setattr(ssl.SSLContext, "wrap_socket", fail_wrap)
     out = tools.tls_cert_check("192.0.2.33")
     assert "via NAT64 64:ff9b::c000:221" in out
+
+
+def test_dns_tools_name_the_nat64_resolver(monkeypatch, nat64_env):
+    monkeypatch.setattr(tools, "_run", lambda binary, args: "flags: qr rd ra ad; QUERY: 1")
+    assert tools.dns_lookup("example.com", resolver="8.8.8.8").startswith(
+        "resolver 8.8.8.8 via NAT64 64:ff9b::808:808\n"
+    )
+    out = tools.dnssec_check("example.com")
+    assert out.splitlines()[0] == "DNSSEC validated (AD bit set)"
+    assert out.splitlines()[1] == "resolver 1.1.1.1 via NAT64 64:ff9b::101:101"
+
+
+def test_backend_records_translations(monkeypatch):
+    monkeypatch.setattr(httpcore.SyncBackend, "connect_tcp", lambda self, host, port, **kw: None)
+    backend = tools._Nat64Backend(ipaddress.IPv6Network(PREFIX))
+    backend.connect_tcp("192.0.2.33", 80)
+    backend.connect_tcp("example.com", 443)
+    assert backend.translated == {"192.0.2.33": "64:ff9b::c000:221"}
+
+
+def test_http_check_reports_nat64_line(monkeypatch, nat64_env):
+    real_client = httpx.Client
+
+    def fake_http_client(**kw):
+        client = real_client(transport=httpx.MockTransport(lambda r: httpx.Response(200, request=r)), **kw)
+        client.nat64_translated = {"192.0.2.33": "64:ff9b::c000:221"}
+        return client
+
+    monkeypatch.setattr(tools, "_http_client", fake_http_client)
+    out = tools.http_check("http://192.0.2.33:8080/")
+    assert out.splitlines()[-1] == "via NAT64: 192.0.2.33 -> 64:ff9b::c000:221"
+
+
+def test_http_get_puts_nat64_line_after_status(monkeypatch, nat64_env):
+    real_client = httpx.Client
+
+    def fake_http_client(**kw):
+        handler = lambda r: httpx.Response(200, headers={"content-type": "text/plain"}, content=b"ok", request=r)  # noqa: E731
+        client = real_client(transport=httpx.MockTransport(handler), **kw)
+        client.nat64_translated = {"192.0.2.33": "64:ff9b::c000:221"}
+        return client
+
+    monkeypatch.setattr(tools, "_http_client", fake_http_client)
+    head = tools.http_get("http://192.0.2.33/").split("\n\n", 1)[0].splitlines()
+    assert head[0].endswith("bytes=2")
+    assert head[1] == "via NAT64: 192.0.2.33 -> 64:ff9b::c000:221"

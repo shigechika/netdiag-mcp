@@ -75,15 +75,27 @@ class _Nat64Backend(httpcore.SyncBackend):
 
     def __init__(self, prefix):
         self._prefix = prefix
+        self.translated: dict[str, str] = {}
 
     def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):
+        addr = nat64.synthesize(host, self._prefix)
+        if addr != host:
+            self.translated[host] = addr
         return super().connect_tcp(
-            nat64.synthesize(host, self._prefix),
+            addr,
             port,
             timeout=timeout,
             local_address=local_address,
             socket_options=socket_options,
         )
+
+
+def _nat64_line(client) -> str:
+    """'via NAT64: <IPv4> -> <IPv6>, ...' for the connections a client opened through NAT64, or ''."""
+    translated = getattr(client, "nat64_translated", None)
+    if not translated:
+        return ""
+    return "via NAT64: " + ", ".join(f"{host} -> {addr}" for host, addr in translated.items())
 
 
 def _http_client(**kwargs) -> httpx.Client:
@@ -99,6 +111,7 @@ def _http_client(**kwargs) -> httpx.Client:
     if prefix is None:
         return client
     backend = _Nat64Backend(prefix)
+    client.nat64_translated = backend.translated
     for transport in (client._transport, *client._mounts.values()):
         if transport is None:
             continue
@@ -144,12 +157,17 @@ def dns_lookup(hostname: str, record_type: str = "A", resolver: str | None = Non
         raise ToolError(f"unsupported record type {record_type!r}; use one of {sorted(DNS_RECORD_TYPES)}")
     flag = _transport_flag(transport)
     args = []
+    note = ""
     if resolver:
-        args.append(f"@{_via_nat64(validate_target(resolver))[0]}")
+        res = validate_target(resolver)
+        addr, via = _via_nat64(res)
+        args.append(f"@{addr}")
+        note = f"resolver {res}{via}\n" if via else ""
     if flag:
         args.append(flag)
     args += [target, rtype, "+noall", "+answer", "+stats"]
-    return _run("dig", args)
+    out = _run("dig", args)
+    return f"{note}{out}" if note else out
 
 
 def dnssec_check(hostname: str, resolver: str = "1.1.1.1", transport: str = "plain") -> str:
@@ -164,7 +182,8 @@ def dnssec_check(hostname: str, resolver: str = "1.1.1.1", transport: str = "pla
     when a network intercepts/spoofs port 53 but leaves 443/853 alone.
     """
     target = validate_target(hostname)
-    res = _via_nat64(validate_target(resolver))[0]
+    res_name = validate_target(resolver)
+    res, via = _via_nat64(res_name)
     flag = _transport_flag(transport)
     args = [f"@{res}"]
     if flag:
@@ -173,6 +192,8 @@ def dnssec_check(hostname: str, resolver: str = "1.1.1.1", transport: str = "pla
     out = _run("dig", args)
     ad_set = "flags:" in out and " ad" in out.split("flags:", 1)[1].split(";", 1)[0]
     verdict = "DNSSEC validated (AD bit set)" if ad_set else "DNSSEC NOT validated (AD bit absent)"
+    if via:
+        verdict += f"\nresolver {res_name}{via}"
     return f"{verdict}\n\n{out}"
 
 
@@ -291,6 +312,7 @@ def http_check(url: str, timeout: float = DEFAULT_TIMEOUT) -> str:
             if resp.status_code == 405:
                 resp = client.get(url)
             elapsed_ms = (time.monotonic() - start) * 1000
+            via = _nat64_line(client)
     except httpx.HTTPError as e:
         raise ToolError(f"HTTP request failed: {e}") from e
     lines = [f"{resp.status_code} {resp.reason_phrase}  {elapsed_ms:.0f}ms  final_url={resp.url}"]
@@ -300,6 +322,8 @@ def http_check(url: str, timeout: float = DEFAULT_TIMEOUT) -> str:
     for header in ("server", "content-type", "content-length"):
         if header in resp.headers:
             lines.append(f"{header}: {resp.headers[header]}")
+    if via:
+        lines.append(via)
     return "\n".join(lines)
 
 
@@ -367,9 +391,15 @@ def _check_destination(url: str) -> str:
         # Both the address itself and the one it carries are checked, so a
         # prefix that overlaps a blocked range (e.g. ::/96 and ::1) cannot hide it.
         # An IPv4 literal is also checked in the NAT64 form it is sent to.
+        # The IPv4 addresses a NAT64 address may carry are checked against the
+        # blocked ranges only: a layout that does not apply decodes to noise
+        # such as 0.0.0.0, which must not refuse a valid destination.
         synthesized = ipaddress.ip_address(nat64.synthesize(str(addr), prefix))
-        for real in (addr, getattr(addr, "ipv4_mapped", None), nat64.embedded_ipv4(addr, prefix), synthesized):
+        for real in (addr, getattr(addr, "ipv4_mapped", None), synthesized):
             if real is not None and (real.is_unspecified or any(real in net for net in _BLOCKED_NETS)):
+                raise ToolError(f"refusing to fetch {host}: resolves to blocked address {addr}")
+        for carried in nat64.embedded_ipv4s(addr, prefix):
+            if any(carried in net for net in _BLOCKED_NETS):
                 raise ToolError(f"refusing to fetch {host}: resolves to blocked address {addr}")
     return url
 
@@ -439,6 +469,7 @@ def http_get(url: str, timeout: float = DEFAULT_TIMEOUT, max_bytes: int = HTTP_G
                     break
             else:
                 raise ToolError(f"too many redirects (>{HTTP_GET_MAX_REDIRECTS})")
+            via = _nat64_line(client)
     except httpx.HTTPError as e:
         raise ToolError(f"HTTP request failed: {e}") from e
     head = f"{status}  final_url={final_url}  content-type={ctype or '(none)'}"
@@ -447,7 +478,7 @@ def http_get(url: str, timeout: float = DEFAULT_TIMEOUT, max_bytes: int = HTTP_G
     if hops:
         head += "\nredirects: " + " -> ".join([*hops, final_url])
     if not _is_textual(ctype):
-        return head + "\nbody not returned: non-textual content type"
+        return head + (f"\n{via}" if via else "") + "\nbody not returned: non-textual content type"
     truncated = len(buf) > limit
     raw = bytes(buf[:limit])
     try:
@@ -459,6 +490,8 @@ def http_get(url: str, timeout: float = DEFAULT_TIMEOUT, max_bytes: int = HTTP_G
         head += f"  (truncated at {limit} bytes)"
     if authed:
         body = http_auth.redact(body, {"Authorization": prev_rule.value} if prev_rule else {})
+    if via:
+        head += "\n" + via
     return head + "\n\n" + body
 
 

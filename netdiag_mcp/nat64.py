@@ -14,8 +14,8 @@ target and says which address was used. Unset means IPv4 literals are used as
 given, as before.
 
 Addresses inside the configured prefix, the well-known prefix 64:ff9b::/96 and
-the local-use prefix 64:ff9b:1::/48 (read with the /96 layout) carry an IPv4
-address, so the http_get blocklist checks that embedded address too: a name
+the local-use prefix 64:ff9b:1::/48 (read with every RFC 6052 layout that fits
+in it) carry an IPv4 address, so the http_get blocklist checks that embedded address too: a name
 whose DNS64 answer points at a NAT64 form of 169.254.169.254 is refused like
 the IPv4 address itself. A DNS64 that uses another network-specific prefix is
 covered only when that prefix is set. IPv4 loopback is never translated.
@@ -31,8 +31,7 @@ import os
 
 ENV_VAR = "NETDIAG_NAT64_PREFIX"
 WELL_KNOWN_PREFIX = ipaddress.IPv6Network("64:ff9b::/96")
-# RFC 8215 local-use prefix. Its addresses are read with the /96 layout (the
-# IPv4 address in the last 32 bits), the layout DNS64 deployments use.
+# RFC 8215 local-use prefix; a network may use it with any RFC 6052 length.
 LOCAL_USE_PREFIX = ipaddress.IPv6Network("64:ff9b:1::/48")
 # IPv4 loopback stays on the host (a local proxy, for instance) and is never
 # sent through NAT64.
@@ -77,16 +76,41 @@ def synthesize(target: str, prefix: ipaddress.IPv6Network | None) -> str:
     return str(ipaddress.IPv6Address(int(prefix.network_address) | int(addr)))
 
 
-def embedded_ipv4(
+# RFC 6052 address layouts by prefix length: (bit offset, bit count) pieces of
+# the IPv4 address, skipping the u-octet (bits 64-71).
+_LAYOUTS = {
+    48: ((48, 16), (72, 16)),
+    56: ((56, 8), (72, 24)),
+    64: ((72, 32),),
+    96: ((96, 32),),
+}
+
+
+def _decode(value: int, length: int) -> ipaddress.IPv4Address:
+    v4 = 0
+    for offset, bits in _LAYOUTS[length]:
+        v4 = (v4 << bits) | ((value >> (128 - offset - bits)) & ((1 << bits) - 1))
+    return ipaddress.IPv4Address(v4)
+
+
+def embedded_ipv4s(
     addr: ipaddress.IPv4Address | ipaddress.IPv6Address, prefix: ipaddress.IPv6Network | None
-) -> ipaddress.IPv4Address | None:
-    """The IPv4 address an IPv6 address under a well-known, local-use or configured NAT64 prefix stands for."""
+) -> list[ipaddress.IPv4Address]:
+    """The IPv4 addresses an IPv6 address under a NAT64 prefix may stand for.
+
+    The well-known and the configured prefix are /96, so there is one. The
+    local-use prefix 64:ff9b:1::/48 may be split into any RFC 6052 length, so
+    every layout that fits inside it is returned; a caller looking for a
+    blocked address checks them all.
+    """
     if addr.version != 6:
-        return None
-    for net in (WELL_KNOWN_PREFIX, LOCAL_USE_PREFIX, prefix):
-        if net is not None and addr in net:
-            return ipaddress.IPv4Address(int(addr) & 0xFFFFFFFF)
-    return None
+        return []
+    value = int(addr)
+    if addr in WELL_KNOWN_PREFIX or (prefix is not None and addr in prefix):
+        return [_decode(value, 96)]
+    if addr in LOCAL_USE_PREFIX:
+        return [_decode(value, length) for length in _LAYOUTS]
+    return []
 
 
 def status(environ: dict[str, str] | None = None) -> dict:

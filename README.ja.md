@@ -113,12 +113,12 @@ NETDIAG_NAT64_PREFIX=64:ff9b::/96
 
 - `ping_host`・`traceroute_path`・`tcp_port_check`・`tls_cert_check`・`http_check`・`http_get`、
   `dns_lookup`/`dnssec_check` の `resolver` は、IPv4 アドレスをプレフィックスから合成したアドレス経由で
-  つなぎます（IPv4 のループバックはそのまま使います）。`ping_host`・`traceroute_path`・`tcp_port_check`・
-  `tls_cert_check` は元の IPv4 アドレスを出し、`via NAT64 <アドレス>` を添えます。`http_check` と `http_get` は
-  元の IPv4 の URL のまま出し、`dig` は使った問い合わせ先を `SERVER:` の行に出します
+  つなぎます（IPv4 のループバックはそのまま使います）。出力には元の IPv4 アドレスを出し、使ったアドレスを
+  添えます。ping・traceroute・TCP と TLS の確認・DNS の問い合わせ先は `via NAT64 <アドレス>`、
+  `http_check`/`http_get` は NAT64 でつないだ接続を `via NAT64: <IPv4> -> <IPv6>` の行で示します（URL は IPv4 のまま）
 - HTTP の `Host` ヘッダは元の IPv4 アドレスのまま、https の証明書も元のアドレスで確かめます
 - `http_get` は、設定したプレフィックス、既知のプレフィックス `64:ff9b::/96`、ローカル用のプレフィックス
-  `64:ff9b:1::/48`（/96 の配置で読みます）の下のアドレスについて、中に入っている IPv4 アドレスが拒否対象なら
+  `64:ff9b:1::/48`（中に収まる RFC 6052 の配置をすべて読みます）の下のアドレスについて、中に入っている IPv4 アドレスが拒否対象なら
   拒否します。これらの下の DNS64 の応答経由でもメタデータの宛先には届きません。既知とローカル用のプレフィックスは
   変数を設定していなくても確かめます。ほかのネットワーク固有のプレフィックスを使う DNS64 は、そのプレフィックスを
   設定したときだけ確かめます
