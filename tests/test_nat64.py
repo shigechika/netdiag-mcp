@@ -344,3 +344,10 @@ def test_http_get_puts_nat64_line_after_status(monkeypatch, nat64_env):
     head = tools.http_get("http://192.0.2.33/").split("\n\n", 1)[0].splitlines()
     assert head[0].endswith("bytes=2")
     assert head[1] == "via NAT64: 192.0.2.33 -> 64:ff9b::c000:221"
+
+
+def test_embedded_ipv4s_checks_local_use_layouts_inside_configured_prefix():
+    custom = ipaddress.IPv6Network("64:ff9b:1:a9fe:a9:fe00::/96")
+    carried = nat64.embedded_ipv4s(ipaddress.ip_address("64:ff9b:1:a9fe:a9:fe00:c000:201"), custom)
+    assert ipaddress.ip_address("192.0.2.1") in carried  # the configured /96 layout
+    assert ipaddress.ip_address("169.254.169.254") in carried  # the /48 layout

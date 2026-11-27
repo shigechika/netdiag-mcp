@@ -106,11 +106,14 @@ def embedded_ipv4s(
     if addr.version != 6:
         return []
     value = int(addr)
+    lengths = []
     if addr in WELL_KNOWN_PREFIX or (prefix is not None and addr in prefix):
-        return [_decode(value, 96)]
+        lengths.append(96)
     if addr in LOCAL_USE_PREFIX:
-        return [_decode(value, length) for length in _LAYOUTS]
-    return []
+        # Also when the configured prefix lies inside it: the other layouts
+        # may still be what a DNS64 elsewhere in the network uses.
+        lengths += [length for length in _LAYOUTS if length not in lengths]
+    return [_decode(value, length) for length in lengths]
 
 
 def status(environ: dict[str, str] | None = None) -> dict:
