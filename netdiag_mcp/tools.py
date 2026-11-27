@@ -391,17 +391,10 @@ def _check_destination(url: str) -> str:
         # Both the address itself and the one it carries are checked, so a
         # prefix that overlaps a blocked range (e.g. ::/96 and ::1) cannot hide it.
         # An IPv4 literal is also checked in the NAT64 form it is sent to.
-        # The IPv4 addresses a NAT64 address may carry are checked against the
-        # blocked ranges; 0.0.0.0 only where the layout is known (see
-        # nat64.carries_unspecified), since a layout that does not apply reads
-        # as 0.0.0.0 for valid destinations.
         synthesized = ipaddress.ip_address(nat64.synthesize(str(addr), prefix))
-        for real in (addr, getattr(addr, "ipv4_mapped", None), synthesized):
+        for real in (addr, getattr(addr, "ipv4_mapped", None), nat64.embedded_ipv4(addr, prefix), synthesized):
             if real is not None and (real.is_unspecified or any(real in net for net in _BLOCKED_NETS)):
                 raise ToolError(f"refusing to fetch {host}: resolves to blocked address {addr}")
-        carried = nat64.embedded_ipv4s(addr, prefix)
-        if nat64.carries_unspecified(addr, prefix) or any(c in net for c in carried for net in _BLOCKED_NETS):
-            raise ToolError(f"refusing to fetch {host}: resolves to blocked address {addr}")
     return url
 
 

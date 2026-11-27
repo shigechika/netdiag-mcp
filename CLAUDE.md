@@ -49,8 +49,9 @@ uv run ruff format --check .      # format (gated in CI)
   `_Nat64Backend` under every httpcore pool of the httpx client (only the TCP
   target changes; URL, Host, TLS name, pools and proxies stay httpx's), and
   `_check_destination` checks the IPv4 address embedded in any address under
-  the configured, well-known (`64:ff9b::/96`) or local-use (`64:ff9b:1::/48`,
-  every RFC 6052 layout) prefix against the blocked ranges. IPv4 loopback is never translated.
+  the configured or well-known (`64:ff9b::/96`) prefix; other prefixes
+  (local-use `64:ff9b:1::/48` included) only when configured, since their
+  layout depends on the network. IPv4 loopback is never translated.
 - `netdiag_mcp/__main__.py` — argparse CLI: `--version`, `--check` (reports
   missing binaries and a malformed `NETDIAG_HTTP_AUTH` or `NETDIAG_NAT64_PREFIX`,
   exits non-zero if any), then

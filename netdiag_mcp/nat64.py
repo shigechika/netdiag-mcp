@@ -13,12 +13,13 @@ synthesized from it (RFC 6052, /96 only). The output still names the IPv4
 target and says which address was used. Unset means IPv4 literals are used as
 given, as before.
 
-Addresses inside the configured prefix, the well-known prefix 64:ff9b::/96 and
-the local-use prefix 64:ff9b:1::/48 (read with every RFC 6052 layout that fits
-in it) carry an IPv4 address, so the http_get blocklist checks that embedded address too: a name
-whose DNS64 answer points at a NAT64 form of 169.254.169.254 is refused like
-the IPv4 address itself. A DNS64 that uses another network-specific prefix is
-covered only when that prefix is set. IPv4 loopback is never translated.
+Addresses inside the configured prefix and the well-known prefix 64:ff9b::/96
+carry an IPv4 address, so the http_get blocklist checks that embedded address
+too: a name whose DNS64 answer points at a NAT64 form of 169.254.169.254 (or of
+0.0.0.0) is refused like the IPv4 address itself. Any other prefix, the RFC 8215
+local-use 64:ff9b:1::/48 included, is covered only when it is the configured
+one, because its layout depends on the network. IPv4 loopback is never
+translated.
 
 The variable is read from the process environment only, like NETDIAG_HTTP_AUTH.
 """
@@ -31,8 +32,6 @@ import os
 
 ENV_VAR = "NETDIAG_NAT64_PREFIX"
 WELL_KNOWN_PREFIX = ipaddress.IPv6Network("64:ff9b::/96")
-# RFC 8215 local-use prefix; a network may use it with any RFC 6052 length.
-LOCAL_USE_PREFIX = ipaddress.IPv6Network("64:ff9b:1::/48")
 # IPv4 loopback stays on the host (a local proxy, for instance) and is never
 # sent through NAT64.
 _LOOPBACK = ipaddress.IPv4Network("127.0.0.0/8")
@@ -76,65 +75,20 @@ def synthesize(target: str, prefix: ipaddress.IPv6Network | None) -> str:
     return str(ipaddress.IPv6Address(int(prefix.network_address) | int(addr)))
 
 
-# RFC 6052 address layouts by prefix length: (bit offset, bit count) pieces of
-# the IPv4 address, skipping the u-octet (bits 64-71).
-_LAYOUTS = {
-    48: ((48, 16), (72, 16)),
-    56: ((56, 8), (72, 24)),
-    64: ((72, 32),),
-    96: ((96, 32),),
-}
-
-
-def _decode(value: int, length: int) -> ipaddress.IPv4Address:
-    v4 = 0
-    for offset, bits in _LAYOUTS[length]:
-        v4 = (v4 << bits) | ((value >> (128 - offset - bits)) & ((1 << bits) - 1))
-    return ipaddress.IPv4Address(v4)
-
-
-def embedded_ipv4s(
+def embedded_ipv4(
     addr: ipaddress.IPv4Address | ipaddress.IPv6Address, prefix: ipaddress.IPv6Network | None
-) -> list[ipaddress.IPv4Address]:
-    """The IPv4 addresses an IPv6 address under a NAT64 prefix may stand for.
+) -> ipaddress.IPv4Address | None:
+    """The IPv4 address an IPv6 address under the well-known or the configured /96 prefix stands for.
 
-    The well-known and the configured prefix are /96, so there is one. The
-    local-use prefix 64:ff9b:1::/48 may be split into any RFC 6052 length, so
-    every layout that fits inside it is returned; a caller looking for a
-    blocked address checks them all.
+    Other prefixes (the local-use 64:ff9b:1::/48 or any network-specific one)
+    are not read unless configured: their layout depends on the network, and
+    reading them with the wrong one gives a different IPv4 address.
     """
     if addr.version != 6:
-        return []
-    value = int(addr)
-    lengths = []
+        return None
     if addr in WELL_KNOWN_PREFIX or (prefix is not None and addr in prefix):
-        lengths.append(96)
-    if addr in LOCAL_USE_PREFIX:
-        # Also when the configured prefix lies inside it: the other layouts
-        # may still be what a DNS64 elsewhere in the network uses.
-        lengths += [length for length in _LAYOUTS if length not in lengths]
-    return [_decode(value, length) for length in lengths]
-
-
-def carries_unspecified(
-    addr: ipaddress.IPv4Address | ipaddress.IPv6Address, prefix: ipaddress.IPv6Network | None
-) -> bool:
-    """Whether a NAT64 address stands for 0.0.0.0, which a translator may map to its own host.
-
-    Under the well-known or the configured /96 prefix the layout is known, so
-    its /96 reading decides. Under the local-use prefix alone the layout is
-    not known, and a layout that does not apply reads as 0.0.0.0 for valid
-    destinations, so it counts only when every layout reads 0.0.0.0.
-    """
-    if addr.version != 6:
-        return False
-    value = int(addr)
-    if addr in WELL_KNOWN_PREFIX or (prefix is not None and addr in prefix):
-        if _decode(value, 96).is_unspecified:
-            return True
-    if addr in LOCAL_USE_PREFIX:
-        return all(_decode(value, length).is_unspecified for length in _LAYOUTS)
-    return False
+        return ipaddress.IPv4Address(int(addr) & 0xFFFFFFFF)
+    return None
 
 
 def status(environ: dict[str, str] | None = None) -> dict:

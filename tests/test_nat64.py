@@ -61,16 +61,29 @@ def test_synthesize_without_prefix_is_identity():
     assert nat64.synthesize("192.0.2.33", None) == "192.0.2.33"
 
 
-def test_embedded_ipv4s_well_known_and_configured():
+def test_embedded_ipv4_well_known_and_configured():
     custom = ipaddress.IPv6Network("2001:db8:64::/96")
-    assert nat64.embedded_ipv4s(ipaddress.ip_address("64:ff9b::a9fe:a9fe"), None) == [
-        ipaddress.ip_address("169.254.169.254")
-    ]
-    assert nat64.embedded_ipv4s(ipaddress.ip_address("2001:db8:64::7f00:1"), custom) == [
-        ipaddress.ip_address("127.0.0.1")
-    ]
-    assert nat64.embedded_ipv4s(ipaddress.ip_address("2001:db8::1"), custom) == []
-    assert nat64.embedded_ipv4s(ipaddress.ip_address("192.0.2.1"), custom) == []
+    assert nat64.embedded_ipv4(ipaddress.ip_address("64:ff9b::a9fe:a9fe"), None) == ipaddress.ip_address(
+        "169.254.169.254"
+    )
+    assert nat64.embedded_ipv4(ipaddress.ip_address("2001:db8:64::7f00:1"), custom) == ipaddress.ip_address("127.0.0.1")
+    assert nat64.embedded_ipv4(ipaddress.ip_address("2001:db8::1"), custom) is None
+    assert nat64.embedded_ipv4(ipaddress.ip_address("192.0.2.1"), custom) is None
+
+
+def test_embedded_ipv4_skips_unconfigured_local_use_prefix():
+    assert nat64.embedded_ipv4(ipaddress.ip_address("64:ff9b:1:c000:2:2100::"), None) is None
+    local = ipaddress.IPv6Network("64:ff9b:1::/96")
+    assert nat64.embedded_ipv4(ipaddress.ip_address("64:ff9b:1::a9fe:a9fe"), local) == ipaddress.ip_address(
+        "169.254.169.254"
+    )
+
+
+@pytest.mark.parametrize("url", ["http://[64:ff9b::]/", "http://[64:ff9b::a9fe:a9fe]/"])
+def test_http_get_refuses_well_known_forms_of_blocked_addresses(monkeypatch, url):
+    monkeypatch.delenv(nat64.ENV_VAR, raising=False)
+    with pytest.raises(ToolError, match="blocked address"):
+        tools.http_get(url)
 
 
 def test_status_reports_prefix_and_error():
@@ -252,34 +265,6 @@ def test_backend_dials_loopback_proxy_directly(monkeypatch):
     assert seen == ["127.0.0.1"]
 
 
-def test_embedded_ipv4s_local_use_reads_every_layout():
-    carried = nat64.embedded_ipv4s(ipaddress.ip_address("64:ff9b:1:c000:2:2100::"), None)
-    assert ipaddress.ip_address("192.0.2.33") in carried  # the /48 layout
-    carried = nat64.embedded_ipv4s(ipaddress.ip_address("64:ff9b:1::a9fe:a9fe"), None)
-    assert ipaddress.ip_address("169.254.169.254") in carried  # the /96 layout
-
-
-def test_http_get_allows_valid_local_use_48_destination(monkeypatch):
-    monkeypatch.delenv(nat64.ENV_VAR, raising=False)
-    monkeypatch.setattr(
-        tools.socket,
-        "getaddrinfo",
-        lambda host, port, *a, **k: [(socket.AF_INET6, None, None, None, ("64:ff9b:1:c000:2:2100::", port))],
-    )
-    assert tools._check_destination("https://ok.example/") == "https://ok.example/"
-
-
-def test_http_get_refuses_local_use_form_of_metadata(monkeypatch):
-    monkeypatch.delenv(nat64.ENV_VAR, raising=False)
-    monkeypatch.setattr(
-        tools.socket,
-        "getaddrinfo",
-        lambda host, port, *a, **k: [(socket.AF_INET6, None, None, None, ("64:ff9b:1::a9fe:a9fe", port))],
-    )
-    with pytest.raises(ToolError, match="blocked address"):
-        tools.http_get("https://evil.example/")
-
-
 def test_tls_verification_failure_names_nat64(monkeypatch, nat64_env):
     import ssl
 
@@ -344,24 +329,3 @@ def test_http_get_puts_nat64_line_after_status(monkeypatch, nat64_env):
     head = tools.http_get("http://192.0.2.33/").split("\n\n", 1)[0].splitlines()
     assert head[0].endswith("bytes=2")
     assert head[1] == "via NAT64: 192.0.2.33 -> 64:ff9b::c000:221"
-
-
-def test_embedded_ipv4s_checks_local_use_layouts_inside_configured_prefix():
-    custom = ipaddress.IPv6Network("64:ff9b:1:a9fe:a9:fe00::/96")
-    carried = nat64.embedded_ipv4s(ipaddress.ip_address("64:ff9b:1:a9fe:a9:fe00:c000:201"), custom)
-    assert ipaddress.ip_address("192.0.2.1") in carried  # the configured /96 layout
-    assert ipaddress.ip_address("169.254.169.254") in carried  # the /48 layout
-
-
-@pytest.mark.parametrize("url", ["http://[64:ff9b::]/", "http://[64:ff9b:1::]/"])
-def test_http_get_refuses_nat64_form_of_unspecified(monkeypatch, url):
-    monkeypatch.delenv(nat64.ENV_VAR, raising=False)
-    with pytest.raises(ToolError, match="blocked address"):
-        tools.http_get(url)
-
-
-def test_carries_unspecified_configured_prefix(monkeypatch):
-    custom = ipaddress.IPv6Network("2001:db8:64::/96")
-    assert nat64.carries_unspecified(ipaddress.ip_address("2001:db8:64::"), custom)
-    assert not nat64.carries_unspecified(ipaddress.ip_address("2001:db8:64::c000:201"), custom)
-    assert not nat64.carries_unspecified(ipaddress.ip_address("64:ff9b:1:c000:2:2100::"), None)

@@ -167,13 +167,13 @@ NETDIAG_NAT64_PREFIX=64:ff9b::/96
   IPv4).
 - For HTTP the `Host` header stays the IPv4 literal, and for https the
   certificate is still checked against it.
-- `http_get` refuses an address under the configured prefix, the well-known
-  prefix `64:ff9b::/96` or the local-use prefix `64:ff9b:1::/48` (read with
-  every RFC 6052 layout that fits in it) when the IPv4 address it carries is blocked, so a DNS64 answer
-  under one of them cannot reach a metadata endpoint either. The well-known and
-  local-use prefixes are checked whether or not the variable is set; a DNS64
-  that uses another network-specific prefix is covered only when that prefix
-  is set.
+- `http_get` refuses an address under the configured prefix or the
+  well-known prefix `64:ff9b::/96` when the IPv4 address it carries is blocked
+  (or is `0.0.0.0`), so a DNS64 answer under one of them cannot reach a
+  metadata endpoint either. The well-known prefix is checked whether or not the
+  variable is set. Any other prefix, the RFC 8215 local-use `64:ff9b:1::/48`
+  included, is covered only when it is the one configured, because its layout
+  depends on the network.
 - Only the TCP connection changes, so proxies from the environment or the
   system settings (with `NO_PROXY`) work as before; a proxy given as an IPv4
   literal is reached through NAT64 too, except one on IPv4 loopback.
