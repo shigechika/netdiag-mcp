@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/shigechika/netdiag-mcp/compare/v0.9.0...v0.10.0) (2026-11-27)
+
+
+### Features
+
+* reach IPv4 literals through NAT64 on IPv6-only hosts ([#36](https://github.com/shigechika/netdiag-mcp/issues/36)) ([f0ecc51](https://github.com/shigechika/netdiag-mcp/commit/f0ecc51279e359fe9265700932ff217ceec2842c))
+
 ## [0.9.0](https://github.com/shigechika/netdiag-mcp/compare/v0.8.1...v0.9.0) (2026-11-14)
 
 
