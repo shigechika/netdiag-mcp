@@ -116,6 +116,27 @@ def embedded_ipv4s(
     return [_decode(value, length) for length in lengths]
 
 
+def carries_unspecified(
+    addr: ipaddress.IPv4Address | ipaddress.IPv6Address, prefix: ipaddress.IPv6Network | None
+) -> bool:
+    """Whether a NAT64 address stands for 0.0.0.0, which a translator may map to its own host.
+
+    Under the well-known or the configured /96 prefix the layout is known, so
+    its /96 reading decides. Under the local-use prefix alone the layout is
+    not known, and a layout that does not apply reads as 0.0.0.0 for valid
+    destinations, so it counts only when every layout reads 0.0.0.0.
+    """
+    if addr.version != 6:
+        return False
+    value = int(addr)
+    if addr in WELL_KNOWN_PREFIX or (prefix is not None and addr in prefix):
+        if _decode(value, 96).is_unspecified:
+            return True
+    if addr in LOCAL_USE_PREFIX:
+        return all(_decode(value, length).is_unspecified for length in _LAYOUTS)
+    return False
+
+
 def status(environ: dict[str, str] | None = None) -> dict:
     """{"prefix": str | None, "error": str | None} for health_check."""
     try:

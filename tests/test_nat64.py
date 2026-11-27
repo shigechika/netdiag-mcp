@@ -351,3 +351,17 @@ def test_embedded_ipv4s_checks_local_use_layouts_inside_configured_prefix():
     carried = nat64.embedded_ipv4s(ipaddress.ip_address("64:ff9b:1:a9fe:a9:fe00:c000:201"), custom)
     assert ipaddress.ip_address("192.0.2.1") in carried  # the configured /96 layout
     assert ipaddress.ip_address("169.254.169.254") in carried  # the /48 layout
+
+
+@pytest.mark.parametrize("url", ["http://[64:ff9b::]/", "http://[64:ff9b:1::]/"])
+def test_http_get_refuses_nat64_form_of_unspecified(monkeypatch, url):
+    monkeypatch.delenv(nat64.ENV_VAR, raising=False)
+    with pytest.raises(ToolError, match="blocked address"):
+        tools.http_get(url)
+
+
+def test_carries_unspecified_configured_prefix(monkeypatch):
+    custom = ipaddress.IPv6Network("2001:db8:64::/96")
+    assert nat64.carries_unspecified(ipaddress.ip_address("2001:db8:64::"), custom)
+    assert not nat64.carries_unspecified(ipaddress.ip_address("2001:db8:64::c000:201"), custom)
+    assert not nat64.carries_unspecified(ipaddress.ip_address("64:ff9b:1:c000:2:2100::"), None)
