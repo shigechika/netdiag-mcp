@@ -59,7 +59,7 @@ anything else yields the status line only. The body is capped at `max_bytes`
 (hard ceiling 1 MiB) and marked `truncated` when cut. Redirects are followed one
 hop at a time (at most 5) and every hop, like the initial URL, is refused if it
 resolves to loopback, link-local, an unspecified address or a cloud metadata
-endpoint, including the NAT64 form of such an address. The whole call is bounded by `timeout * 3` of wall clock.
+endpoint, including the NAT64 form of such an address (see the README). The whole call is bounded by `timeout * 3` of wall clock.
 
 With `NETDIAG_HTTP_AUTH` set, each hop under a configured https prefix is sent
 with that prefix's `Authorization` header, decided per hop (see the README).

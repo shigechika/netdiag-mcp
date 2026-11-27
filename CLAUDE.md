@@ -49,14 +49,17 @@ uv run ruff format --check .      # format (gated in CI)
   `_Nat64Backend` under every httpcore pool of the httpx client (only the TCP
   target changes; URL, Host, TLS name, pools and proxies stay httpx's), and
   `_check_destination` checks the IPv4 address embedded in any address under
-  the configured or well-known prefix.
+  the configured, well-known (`64:ff9b::/96`) or local-use (`64:ff9b:1::/48`)
+  prefix. IPv4 loopback is never translated.
 - `netdiag_mcp/__main__.py` — argparse CLI: `--version`, `--check` (reports
-  missing binaries, exits non-zero if any are absent), then
+  missing binaries and a malformed `NETDIAG_HTTP_AUTH` or `NETDIAG_NAT64_PREFIX`,
+  exits non-zero if any), then
   `mcp.run(transport="stdio")`.
 
 ## Conventions
 
-- No credential store and no config file. The only environment variable is
+- No credential store and no config file. The environment variables are the
+  optional `NETDIAG_NAT64_PREFIX` (`netdiag_mcp/nat64.py`, see Architecture) and
   the optional `NETDIAG_HTTP_AUTH` (`netdiag_mcp/http_auth.py`): an https URL
   prefix → `Authorization` value map that `http_get` applies per redirect hop
   after comparing parsed scheme/host/port/path. Never return, log or put the

@@ -479,7 +479,7 @@ def tls_cert_check(host: str, port: int = 443) -> str:
                 cert = tls.getpeercert()
                 cipher = tls.cipher()
     except ssl.SSLCertVerificationError as e:
-        return f"TLS handshake failed certificate verification: {e}"
+        return f"TLS handshake failed certificate verification{note}: {e}"
     except (TimeoutError, OSError) as e:
         raise ToolError(f"could not connect to {target}:{p}{note}: {e}") from e
     subject = dict(x[0] for x in cert.get("subject", []))

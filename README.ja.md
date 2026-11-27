@@ -105,7 +105,7 @@ NETDIAG_HTTP_AUTH='{"https://reports.example.ac.jp/daily/": "Bearer <token>"}'
 
 IPv6 だけのホストでは、名前はネットワークの DNS64 でそのまま引けますが、`192.0.2.33` のような
 IPv4 アドレスを直接指定すると「Network is unreachable」で失敗します。`NETDIAG_NAT64_PREFIX` に
-ネットワークの NAT64 プレフィックス（RFC 6052、/96 のみ）を設定します。
+ネットワークの NAT64 プレフィックス（RFC 6052、/96 のみ、64〜71 ビット目は 0）を設定します。
 
 ```bash
 NETDIAG_NAT64_PREFIX=64:ff9b::/96
@@ -113,13 +113,17 @@ NETDIAG_NAT64_PREFIX=64:ff9b::/96
 
 - `ping_host`・`traceroute_path`・`tcp_port_check`・`tls_cert_check`・`http_check`・`http_get`、
   `dns_lookup`/`dnssec_check` の `resolver` は、IPv4 アドレスをプレフィックスから合成したアドレス経由で
-  つなぎます。出力には元の IPv4 アドレスを出し、`via NAT64 <アドレス>` を添えます
+  つなぎます（IPv4 のループバックはそのまま使います）。`ping_host`・`traceroute_path`・`tcp_port_check`・
+  `tls_cert_check` は元の IPv4 アドレスを出し、`via NAT64 <アドレス>` を添えます。`http_check` と `http_get` は
+  元の IPv4 の URL のまま出し、`dig` は使った問い合わせ先を `SERVER:` の行に出します
 - HTTP の `Host` ヘッダは元の IPv4 アドレスのまま、https の証明書も元のアドレスで確かめます
-- `http_get` は、設定したプレフィックスと既知のプレフィックス（`64:ff9b::/96`）の下のアドレスについて、
-  中に入っている IPv4 アドレスが拒否対象なら拒否します。DNS64 の応答経由でもメタデータの宛先には
-  届きません。この確認は変数を設定していなくても行います
+- `http_get` は、設定したプレフィックス、既知のプレフィックス `64:ff9b::/96`、ローカル用のプレフィックス
+  `64:ff9b:1::/48`（/96 の配置で読みます）の下のアドレスについて、中に入っている IPv4 アドレスが拒否対象なら
+  拒否します。これらの下の DNS64 の応答経由でもメタデータの宛先には届きません。既知とローカル用のプレフィックスは
+  変数を設定していなくても確かめます。ほかのネットワーク固有のプレフィックスを使う DNS64 は、そのプレフィックスを
+  設定したときだけ確かめます
 - 変わるのは TCP の接続先だけなので、環境変数や OS の設定のプロキシ（`NO_PROXY` を含む）はそのまま効きます。
-  IPv4 アドレスで指定したプロキシにも NAT64 経由でつなぎます
+  IPv4 アドレスで指定したプロキシにも NAT64 経由でつなぎます（IPv4 のループバックのプロキシは除きます）
 - 設定しなければ IPv4 アドレスはそのまま使います。値が不正なら該当ツールはエラーを返し、
   `health_check` は `degraded` になります
 

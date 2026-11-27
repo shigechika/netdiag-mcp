@@ -39,7 +39,9 @@ def test_load_prefix_accepts_96():
     assert nat64.load_prefix({nat64.ENV_VAR: "2001:db8:64::/96"}) == ipaddress.IPv6Network("2001:db8:64::/96")
 
 
-@pytest.mark.parametrize("raw", ["64:ff9b::/64", "192.0.2.0/24", "not-a-prefix", "64:ff9b::1/96"])
+@pytest.mark.parametrize(
+    "raw", ["64:ff9b::/64", "192.0.2.0/24", "not-a-prefix", "64:ff9b::1/96", "fd12:3456:789a:0:100::/96"]
+)
 def test_load_prefix_rejects_malformed(raw):
     with pytest.raises(nat64.Nat64ConfigError):
         nat64.load_prefix({nat64.ENV_VAR: raw})
@@ -233,3 +235,53 @@ def test_http_get_refuses_blocked_address_inside_overlapping_prefix(monkeypatch)
     monkeypatch.setenv(nat64.ENV_VAR, "::/96")
     with pytest.raises(ToolError, match="blocked address"):
         tools.http_get("http://[::1]/")
+
+
+def test_synthesize_keeps_ipv4_loopback():
+    net = ipaddress.IPv6Network(PREFIX)
+    assert nat64.synthesize("127.0.0.1", net) == "127.0.0.1"
+    assert nat64.synthesize("127.8.9.10", net) == "127.8.9.10"
+
+
+def test_backend_dials_loopback_proxy_directly(monkeypatch):
+    seen = []
+    monkeypatch.setattr(httpcore.SyncBackend, "connect_tcp", lambda self, host, port, **kw: seen.append(host))
+    tools._Nat64Backend(ipaddress.IPv6Network(PREFIX)).connect_tcp("127.0.0.1", 3128)
+    assert seen == ["127.0.0.1"]
+
+
+def test_embedded_ipv4_local_use_prefix():
+    assert nat64.embedded_ipv4(ipaddress.ip_address("64:ff9b:1::a9fe:a9fe"), None) == ipaddress.ip_address(
+        "169.254.169.254"
+    )
+
+
+def test_http_get_refuses_local_use_form_of_metadata(monkeypatch):
+    monkeypatch.delenv(nat64.ENV_VAR, raising=False)
+    monkeypatch.setattr(
+        tools.socket,
+        "getaddrinfo",
+        lambda host, port, *a, **k: [(socket.AF_INET6, None, None, None, ("64:ff9b:1::a9fe:a9fe", port))],
+    )
+    with pytest.raises(ToolError, match="blocked address"):
+        tools.http_get("https://evil.example/")
+
+
+def test_tls_verification_failure_names_nat64(monkeypatch, nat64_env):
+    import ssl
+
+    class FakeSock:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(tools.socket, "create_connection", lambda addr, timeout: FakeSock())
+
+    def fail_wrap(self, sock, server_hostname=None):
+        raise ssl.SSLCertVerificationError("bad cert")
+
+    monkeypatch.setattr(ssl.SSLContext, "wrap_socket", fail_wrap)
+    out = tools.tls_cert_check("192.0.2.33")
+    assert "via NAT64 64:ff9b::c000:221" in out

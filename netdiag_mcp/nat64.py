@@ -13,10 +13,12 @@ synthesized from it (RFC 6052, /96 only). The output still names the IPv4
 target and says which address was used. Unset means IPv4 literals are used as
 given, as before.
 
-Addresses inside the configured prefix and the well-known prefix 64:ff9b::/96
-carry an IPv4 address, so the http_get blocklist checks that embedded address
-too: a name whose DNS64 answer points at a NAT64 form of 169.254.169.254 is
-refused like the IPv4 address itself.
+Addresses inside the configured prefix, the well-known prefix 64:ff9b::/96 and
+the local-use prefix 64:ff9b:1::/48 (read with the /96 layout) carry an IPv4
+address, so the http_get blocklist checks that embedded address too: a name
+whose DNS64 answer points at a NAT64 form of 169.254.169.254 is refused like
+the IPv4 address itself. A DNS64 that uses another network-specific prefix is
+covered only when that prefix is set. IPv4 loopback is never translated.
 
 The variable is read from the process environment only, like NETDIAG_HTTP_AUTH.
 """
@@ -29,6 +31,12 @@ import os
 
 ENV_VAR = "NETDIAG_NAT64_PREFIX"
 WELL_KNOWN_PREFIX = ipaddress.IPv6Network("64:ff9b::/96")
+# RFC 8215 local-use prefix. Its addresses are read with the /96 layout (the
+# IPv4 address in the last 32 bits), the layout DNS64 deployments use.
+LOCAL_USE_PREFIX = ipaddress.IPv6Network("64:ff9b:1::/48")
+# IPv4 loopback stays on the host (a local proxy, for instance) and is never
+# sent through NAT64.
+_LOOPBACK = ipaddress.IPv4Network("127.0.0.0/8")
 
 
 class Nat64ConfigError(ValueError):
@@ -43,6 +51,8 @@ def _parse(raw: str) -> ipaddress.IPv6Network:
         raise Nat64ConfigError(f"{ENV_VAR} must be an IPv6 network such as 64:ff9b::/96: {e}") from None
     if net.prefixlen != 96:
         raise Nat64ConfigError(f"{ENV_VAR} must be a /96 prefix (got /{net.prefixlen})")
+    if (int(net.network_address) >> 56) & 0xFF:
+        raise Nat64ConfigError(f"{ENV_VAR} must have bits 64-71 set to zero (RFC 6052)")
     return net
 
 
@@ -55,14 +65,14 @@ def load_prefix(environ: dict[str, str] | None = None) -> ipaddress.IPv6Network 
 
 
 def synthesize(target: str, prefix: ipaddress.IPv6Network | None) -> str:
-    """The NAT64 address for an IPv4 literal; any other target is returned unchanged."""
+    """The NAT64 address for an IPv4 literal; any other target (and IPv4 loopback) is returned unchanged."""
     if prefix is None:
         return target
     try:
         addr = ipaddress.ip_address(target)
     except ValueError:
         return target
-    if addr.version != 4:
+    if addr.version != 4 or addr in _LOOPBACK:
         return target
     return str(ipaddress.IPv6Address(int(prefix.network_address) | int(addr)))
 
@@ -70,10 +80,10 @@ def synthesize(target: str, prefix: ipaddress.IPv6Network | None) -> str:
 def embedded_ipv4(
     addr: ipaddress.IPv4Address | ipaddress.IPv6Address, prefix: ipaddress.IPv6Network | None
 ) -> ipaddress.IPv4Address | None:
-    """The IPv4 address an IPv6 address under the well-known or configured NAT64 prefix stands for."""
+    """The IPv4 address an IPv6 address under a well-known, local-use or configured NAT64 prefix stands for."""
     if addr.version != 6:
         return None
-    for net in (WELL_KNOWN_PREFIX, prefix):
+    for net in (WELL_KNOWN_PREFIX, LOCAL_USE_PREFIX, prefix):
         if net is not None and addr in net:
             return ipaddress.IPv4Address(int(addr) & 0xFFFFFFFF)
     return None
